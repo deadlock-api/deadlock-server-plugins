@@ -45,6 +45,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: raimannma/deadworks
+          ref: docker-build
           path: deadworks
           submodules: recursive
 
