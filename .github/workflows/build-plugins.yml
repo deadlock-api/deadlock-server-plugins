@@ -1,0 +1,53 @@
+name: Build Plugins
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  discover:
+    name: Discover plugins
+    runs-on: ubuntu-latest
+    outputs:
+      plugins: ${{ steps.find.outputs.plugins }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find plugin projects
+        id: find
+        run: |
+          plugins=$(find . -name '*.csproj' -printf '%h\n' | sed 's|^\./||' | sort -u | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "plugins=$plugins" >> "$GITHUB_OUTPUT"
+          echo "Found plugins: $plugins"
+
+  build:
+    name: Build ${{ matrix.plugin }}
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJson(needs.discover.outputs.plugins) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download latest Deadworks release
+        run: |
+          gh release download --repo Deadworks-net/deadworks --pattern '*.zip' --output deadworks.zip
+          unzip -q deadworks.zip -d deadworks-framework
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build ${{ matrix.plugin }}
+        run: |
+          dotnet build "${{ matrix.plugin }}" \
+            -p:DeadlockDir=${{ github.workspace }}/deadworks-framework \
+            -c Release \
+            --nologo
