@@ -13,7 +13,7 @@ jobs:
     outputs:
       plugins: ${{ steps.find.outputs.plugins }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Find plugin projects
         id: find
@@ -31,10 +31,10 @@ jobs:
       matrix:
         plugin: ${{ fromJson(needs.discover.outputs.plugins) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 

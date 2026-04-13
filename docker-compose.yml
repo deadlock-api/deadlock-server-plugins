@@ -1,0 +1,20 @@
+services:
+  normal:
+    image: ghcr.io/raimannma/deadlock-server-plugins/normal:latest
+    ports:
+      - "${SERVER_PORT:-27015}:${SERVER_PORT:-27015}/udp"
+      - "${SERVER_PORT:-27015}:${SERVER_PORT:-27015}/tcp"
+    env_file: .env
+    volumes:
+      - /etc/machine-id:/etc/machine-id:ro
+      - proton-normal:/opt/proton
+      - gamedata-normal:/home/steam/server
+      - compatdata-normal:/home/steam/.steam/steam/steamapps/compatdata
+      - dotnet-cache-normal:/opt/dotnet-cache
+    restart: unless-stopped
+
+volumes:
+  proton-normal:
+  gamedata-normal:
+  compatdata-normal:
+  dotnet-cache-normal:
