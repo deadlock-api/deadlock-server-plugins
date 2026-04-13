@@ -13,9 +13,13 @@ public class StatusPoker : DeadworksPluginBase
     public override void OnLoad(bool isReload)
     {
         Console.WriteLine($"[{Name}] {(isReload ? "Reloaded" : "Loaded")}!");
+    }
 
+    public override void OnStartupServer()
+    {
+        _pokerTimer?.Dispose();
         _pokerTimer = new System.Threading.Timer(_ => SendPoke(), null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
-        Console.WriteLine($"[{Name}] Poking every 10 seconds");
+        Console.WriteLine($"[{Name}] Server ready, poking every 10 seconds");
     }
 
     private async void SendPoke()
