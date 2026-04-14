@@ -32,6 +32,27 @@ public sealed class TimerEngine
 
     public void Remove(int slot) => _runs.Remove(slot);
 
+    /// <summary>
+    /// Current objective zone for a player: start if they haven't begun,
+    /// the next checkpoint while running, or end once all checkpoints are cleared.
+    /// </summary>
+    public Zone? GetTargetZone(int slot)
+    {
+        var run = GetRun(slot);
+        switch (run.State)
+        {
+            case RunState.Idle:
+            case RunState.InStart:
+                return _start;
+            case RunState.Running:
+                return run.NextCheckpointIndex < _checkpoints.Count
+                    ? _checkpoints[run.NextCheckpointIndex]
+                    : _end;
+            default:
+                return null;
+        }
+    }
+
     public void ResetAll()
     {
         foreach (var run in _runs.Values)

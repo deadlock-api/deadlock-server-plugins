@@ -17,6 +17,7 @@ public class LockTimerPlugin : DeadworksPluginBase
     private ZoneRenderer? _renderer;
     private TimerEngine? _engine;
     private TimerHud? _timerHud;
+    private MinimapWaypoint? _waypoint;
     private MetricsClient? _metrics;
     private AutoSpawn? _autoSpawn;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
@@ -49,6 +50,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             _renderer  = new ZoneRenderer();
             _engine    = new TimerEngine();
             _timerHud  = new TimerHud();
+            _waypoint  = new MinimapWaypoint();
             _autoSpawn = new AutoSpawn();
 
             // Timer.Every avoids the per-tick native interop overhead of OnGameFrame,
@@ -105,6 +107,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             _checkpointZones = zoneSet.Checkpoints;
             _checkpointNames = zoneSet.CheckpointNames;
             _engine.SetZones(_startZone, _endZone, _checkpointZones, _checkpointNames);
+            _waypoint?.Clear();
             _autoSpawn?.SetStartZone(_startZone);
             _zonesRendered = false;
 
@@ -143,6 +146,7 @@ public class LockTimerPlugin : DeadworksPluginBase
         {
             _engine?.Remove(args.Slot);
             _timerHud?.Remove(args.Slot);
+            _waypoint?.Remove(args.Slot);
             _autoSpawn?.OnDisconnect(args.Slot);
             _slotToSteamId.Remove(args.Slot);
             _slotReadyAt.Remove(args.Slot);
@@ -195,6 +199,10 @@ public class LockTimerPlugin : DeadworksPluginBase
                 var finished = _engine.Tick(slot, pawn.Position, now, OnCheckpointHit);
 
                 _timerHud?.Tick(slot, pawn, run, now);
+                var target = _engine.GetTargetZone(slot);
+                var targetCenter = target is null ? (System.Numerics.Vector3?)null
+                                                  : (target.Min + target.Max) * 0.5f;
+                _waypoint?.Tick(slot, targetCenter, now);
 
                 if (finished is null) continue;
 
