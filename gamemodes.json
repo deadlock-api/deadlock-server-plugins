@@ -1,3 +1,4 @@
 {
-  "normal": ["StatusPoker"]
+  "normal": ["StatusPoker"],
+  "lock-timer": ["StatusPoker", "LockTimer"]
 }

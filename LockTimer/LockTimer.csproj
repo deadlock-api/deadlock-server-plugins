@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>LockTimer</RootNamespace>
+    <AssemblyName>LockTimer</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Path to your Deadlock game installation. Override via environment variable
+         or pass on the command line: dotnet build -p:DeadlockDir="D:\Steam\..." -->
+    <DeadlockDir Condition="'$(DeadlockDir)' == ''">$(DEADLOCK_GAME_DIR)</DeadlockDir>
+    <DeadlockBin>$(DeadlockDir)\game\bin\win64</DeadlockBin>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="DeadworksManaged.Api">
+      <HintPath>$(DeadlockBin)\managed\DeadworksManaged.Api.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+    <Reference Include="Google.Protobuf">
+      <HintPath>$(DeadlockBin)\managed\Google.Protobuf.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="LockTimer.Tests\**" />
+    <EmbeddedResource Remove="LockTimer.Tests\**" />
+    <None Remove="LockTimer.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\Migrations\*.sql" />
+  </ItemGroup>
+
+  <Target Name="DeployToGame" AfterTargets="Build">
+    <!-- Plugin + managed deps go in plugins/ (PluginLoadContext probes here) -->
+    <ItemGroup>
+      <PluginFiles Include="$(OutputPath)LockTimer.dll;$(OutputPath)LockTimer.pdb" />
+      <PluginFiles Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
+      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.core.dll" />
+      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.provider.e_sqlite3.dll" />
+      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.batteries_v2.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)"
+          DestinationFolder="$(DeadlockBin)\managed\plugins"
+          SkipUnchangedFiles="false"
+          Retries="0"
+          ContinueOnError="WarnAndContinue" />
+
+    <!-- Native SQLite DLL must NOT go in plugins/ — PluginLoader tries to load it
+         as a .NET assembly and crashes with BadImageFormatException.
+         Place it in the process directory (bin/win64/) where P/Invoke always probes. -->
+    <ItemGroup>
+      <NativeDeps Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NativeDeps)"
+          DestinationFolder="$(DeadlockBin)"
+          SkipUnchangedFiles="false"
+          Retries="0"
+          ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>
