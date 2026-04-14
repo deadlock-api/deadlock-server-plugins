@@ -1,6 +1,7 @@
 name: Build Gamemode Images
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     tags: ["v*"]
@@ -118,7 +119,7 @@ jobs:
           file: deadworks/docker/Dockerfile
           build-contexts: |
             extra-plugins=staged-plugins
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
