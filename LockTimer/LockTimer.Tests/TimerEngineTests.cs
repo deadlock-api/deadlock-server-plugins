@@ -8,9 +8,9 @@ namespace LockTimer.Tests;
 public class TimerEngineTests
 {
     private static Zone StartZone() =>
-        new(ZoneKind.Start, "m", new(0, 0, 0),    new(100, 100, 100),  UpdatedAtUnix: 0);
+        new(ZoneKind.Start, "m", new(0, 0, 0),    new(100, 100, 100));
     private static Zone EndZone() =>
-        new(ZoneKind.End,   "m", new(1000, 0, 0), new(1100, 100, 100), UpdatedAtUnix: 0);
+        new(ZoneKind.End,   "m", new(1000, 0, 0), new(1100, 100, 100));
 
     private static TimerEngine MakeEngine()
     {

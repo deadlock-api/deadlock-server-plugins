@@ -1,0 +1,16 @@
+# LockTimer zone definitions.
+# Each entry maps a Deadlock map name to its start/end AABB zones
+# expressed as world-unit min/max corners [x, y, z].
+#
+# Unknown maps have no zones and the timer stays idle.
+
+maps:
+  # dl_midtown is the default Deadlock map. Replace these placeholder
+  # coordinates with the real start/end AABBs before using the plugin.
+  dl_midtown:
+    start:
+      min: [0.0, 0.0, 0.0]
+      max: [100.0, 100.0, 50.0]
+    end:
+      min: [500.0, 500.0, 0.0]
+      max: [600.0, 600.0, 50.0]

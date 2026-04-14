@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <PackageReference Include="YamlDotNet" Version="16.2.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -38,17 +38,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Data\Migrations\*.sql" />
+    <None Update="zones.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <Target Name="DeployToGame" AfterTargets="Build">
     <!-- Plugin + managed deps go in plugins/ (PluginLoadContext probes here) -->
     <ItemGroup>
       <PluginFiles Include="$(OutputPath)LockTimer.dll;$(OutputPath)LockTimer.pdb" />
-      <PluginFiles Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
-      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.core.dll" />
-      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.provider.e_sqlite3.dll" />
-      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.batteries_v2.dll" />
+      <PluginFiles Include="$(OutputPath)YamlDotNet.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginFiles)"
           DestinationFolder="$(DeadlockBin)\managed\plugins"
@@ -56,15 +55,12 @@
           Retries="0"
           ContinueOnError="WarnAndContinue" />
 
-    <!-- Native SQLite DLL must NOT go in plugins/ — PluginLoader tries to load it
-         as a .NET assembly and crashes with BadImageFormatException.
-         Place it in the process directory (bin/win64/) where P/Invoke always probes. -->
-    <ItemGroup>
-      <NativeDeps Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" />
-    </ItemGroup>
-    <Copy SourceFiles="@(NativeDeps)"
-          DestinationFolder="$(DeadlockBin)"
-          SkipUnchangedFiles="false"
+    <!-- Ship an example zones.yaml alongside the plugin. Users edit the copy in
+         $(DeadlockBin)\managed\LockTimer\zones.yaml at runtime; this default
+         just seeds the directory if nothing is there yet. -->
+    <Copy SourceFiles="$(OutputPath)zones.yaml"
+          DestinationFolder="$(DeadlockBin)\managed\LockTimer"
+          SkipUnchangedFiles="true"
           Retries="0"
           ContinueOnError="WarnAndContinue" />
   </Target>

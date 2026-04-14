@@ -7,7 +7,7 @@ namespace LockTimer.Tests;
 public class ZoneTests
 {
     private static Zone Box(Vector3 min, Vector3 max)
-        => new(ZoneKind.Start, "test_map", min, max, UpdatedAtUnix: 0);
+        => new(ZoneKind.Start, "test_map", min, max);
 
     [Fact]
     public void Contains_point_at_center_is_true()
@@ -44,7 +44,7 @@ public class ZoneTests
     [Fact]
     public void From_two_corners_normalizes_min_max()
     {
-        var z = Zone.FromCorners(ZoneKind.End, "m", new(100, 0, 50), new(0, 100, 0), updatedAtUnix: 0);
+        var z = Zone.FromCorners(ZoneKind.End, "m", new(100, 0, 50), new(0, 100, 0));
         Assert.Equal(new Vector3(0, 0, 0), z.Min);
         Assert.Equal(new Vector3(100, 100, 50), z.Max);
     }
