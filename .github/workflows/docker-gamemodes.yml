@@ -53,7 +53,7 @@ jobs:
         run: |
           mkdir -p staged-plugins
           for plugin in $(echo '${{ toJson(matrix.entry.plugins) }}' | jq -r '.[]'); do
-            cp -r "plugins/$plugin" "staged-plugins/$plugin"
+            rsync -a --exclude '*.Tests' "plugins/$plugin" "staged-plugins/"
           done
           echo "Staged plugins:"
           ls -la staged-plugins/
