@@ -12,7 +12,13 @@ public sealed class ZoneRenderer
 
     public void Render(Zone zone)
     {
-        var color = zone.Kind == ZoneKind.Start ? Color.LimeGreen : Color.Red;
+        var color = zone.Kind switch
+        {
+            ZoneKind.Start      => Color.LimeGreen,
+            ZoneKind.End        => Color.Red,
+            ZoneKind.Checkpoint => Color.DeepSkyBlue,
+            _                   => Color.White,
+        };
         var corners = GetCorners(zone.Min, zone.Max);
         var edgeIndices = GetEdgeIndices();
 

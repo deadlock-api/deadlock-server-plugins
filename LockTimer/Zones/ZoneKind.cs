@@ -4,4 +4,5 @@ public enum ZoneKind
 {
     Start = 0,
     End = 1,
+    Checkpoint = 2,
 }
