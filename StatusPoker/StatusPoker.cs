@@ -8,8 +8,9 @@ public class StatusPoker : DeadworksPluginBase
 {
     public override string Name => "StatusPoker";
 
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private System.Threading.Timer? _pokerTimer;
+    private CancellationTokenSource? _cts;
 
     private string _apiBase = null!;
     private string _secret = null!;
@@ -37,13 +38,33 @@ public class StatusPoker : DeadworksPluginBase
 
     public override void OnStartupServer()
     {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+
         _pokerTimer?.Dispose();
         _pokerTimer = new System.Threading.Timer(
-            _ => SendPoke(), null, TimeSpan.Zero, TimeSpan.FromSeconds(_intervalSeconds));
+            _ => _ = SendPokeAndReschedule(), null, TimeSpan.Zero, Timeout.InfiniteTimeSpan);
         Console.WriteLine($"[{Name}] Server ready, poking every {_intervalSeconds}s");
     }
 
-    private async void SendPoke()
+    private async Task SendPokeAndReschedule()
+    {
+        try
+        {
+            await SendPoke(_cts!.Token);
+        }
+        finally
+        {
+            try
+            {
+                _pokerTimer?.Change(TimeSpan.FromSeconds(_intervalSeconds), Timeout.InfiniteTimeSpan);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    private async Task SendPoke(CancellationToken ct)
     {
         try
         {
@@ -61,10 +82,10 @@ public class StatusPoker : DeadworksPluginBase
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _secret);
 
-            var response = await Http.SendAsync(request);
+            var response = await Http.SendAsync(request, ct);
             Console.WriteLine($"[{Name}] POST {response.StatusCode}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Console.WriteLine($"[{Name}] POST failed: {ex.Message}");
         }
@@ -74,6 +95,8 @@ public class StatusPoker : DeadworksPluginBase
 
     public override void OnUnload()
     {
+        _cts?.Cancel();
+        _cts?.Dispose();
         _pokerTimer?.Dispose();
         Console.WriteLine($"[{Name}] Unloaded!");
     }
