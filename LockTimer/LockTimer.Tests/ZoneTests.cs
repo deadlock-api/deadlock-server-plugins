@@ -25,12 +25,12 @@ public class ZoneTests
     }
 
     [Fact]
-    public void Contains_point_just_outside_each_axis_is_false()
+    public void Contains_point_outside_margin_each_axis_is_false()
     {
         var z = Box(new(0, 0, 0), new(100, 100, 100));
-        Assert.False(z.Contains(new(-0.01f, 50, 50)));
-        Assert.False(z.Contains(new(50, 100.01f, 50)));
-        Assert.False(z.Contains(new(50, 50, -0.01f)));
+        Assert.False(z.Contains(new(-20.01f, 50, 50)));
+        Assert.False(z.Contains(new(50, 120.01f, 50)));
+        Assert.False(z.Contains(new(50, 50, -20.01f)));
     }
 
     [Fact]

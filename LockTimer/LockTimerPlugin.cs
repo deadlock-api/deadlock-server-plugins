@@ -2,6 +2,7 @@ using System.IO;
 using DeadworksManaged.Api;
 using LockTimer.Hud;
 using LockTimer.Records;
+using LockTimer.Runtime;
 using LockTimer.Timing;
 using LockTimer.Zones;
 
@@ -18,6 +19,9 @@ public class LockTimerPlugin : DeadworksPluginBase
     private SpeedHud? _speedHud;
     private TimerHud? _timerHud;
     private MetricsClient? _metrics;
+    private PlayerIsolation? _isolation;
+    private AutoSpawn? _autoSpawn;
+    private DamageBlocker? _damageBlocker;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
     private readonly Dictionary<int, long> _slotReadyAt = new();
     private IHandle? _tickTimer;
@@ -43,10 +47,13 @@ public class LockTimerPlugin : DeadworksPluginBase
             var region   = Env("REGION", "");
             _metrics = new MetricsClient(apiBase, secret, serverId, gameMode, region);
 
-            _renderer = new ZoneRenderer();
-            _engine   = new TimerEngine();
-            _speedHud = new SpeedHud();
-            _timerHud = new TimerHud();
+            _renderer      = new ZoneRenderer();
+            _engine        = new TimerEngine();
+            _speedHud      = new SpeedHud();
+            _timerHud      = new TimerHud();
+            _isolation     = new PlayerIsolation();
+            _autoSpawn     = new AutoSpawn();
+            _damageBlocker = new DamageBlocker();
 
             // Timer.Every avoids the per-tick native interop overhead of OnGameFrame,
             // which caused thread starvation and client timeouts during connection.
@@ -98,6 +105,8 @@ public class LockTimerPlugin : DeadworksPluginBase
 
             (_startZone, _endZone) = _zoneConfig.GetForMap(map);
             _engine.SetZones(_startZone, _endZone);
+            _autoSpawn?.SetStartZone(_startZone);
+            ServerConfig.Apply();
             _zonesRendered = false;
 
             if (_startZone is null && _endZone is null)
@@ -129,6 +138,43 @@ public class LockTimerPlugin : DeadworksPluginBase
         return true;
     }
 
+    public override void OnClientFullConnect(ClientFullConnectEvent args)
+    {
+        try
+        {
+            _autoSpawn?.OnJoin(args);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{Name}] OnClientFullConnect failed: {ex}");
+        }
+    }
+
+    public override HookResult OnTakeDamage(TakeDamageEvent args)
+    {
+        try
+        {
+            return _damageBlocker?.Handle(args) ?? HookResult.Continue;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{Name}] OnTakeDamage failed: {ex}");
+            return HookResult.Continue;
+        }
+    }
+
+    public override void OnCheckTransmit(CheckTransmitEvent args)
+    {
+        try
+        {
+            _isolation?.Handle(args);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{Name}] OnCheckTransmit failed: {ex}");
+        }
+    }
+
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
     {
         try
@@ -136,6 +182,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             _engine?.Remove(args.Slot);
             _speedHud?.Remove(args.Slot);
             _timerHud?.Remove(args.Slot);
+            _autoSpawn?.OnDisconnect(args.Slot);
             _slotToSteamId.Remove(args.Slot);
             _slotReadyAt.Remove(args.Slot);
         }
@@ -180,6 +227,8 @@ public class LockTimerPlugin : DeadworksPluginBase
                     }
                 }
 
+                _autoSpawn?.Tick(controller, pawn);
+
                 _speedHud?.Tick(slot, pawn);
 
                 var run = _engine.GetRun(slot);
@@ -210,7 +259,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             playerName: player.PlayerName);
 
         var formatted = TimeFormatter.FormatTime(run.ElapsedMs);
-        Chat.PrintToChatAll($"[LockTimer] {player.PlayerName} finished in {formatted}");
+        Chat.PrintToChat(slot, $"[LockTimer] finished in {formatted}");
     }
 
     [ChatCommand("zones")]
@@ -230,8 +279,10 @@ public class LockTimerPlugin : DeadworksPluginBase
     [ChatCommand("reset")]
     public HookResult OnReset(ChatCommandContext ctx)
     {
-        _engine?.Remove(ctx.Message.SenderSlot);
-        Chat.PrintToChat(ctx.Message.SenderSlot, $"[{Name}] run reset");
+        int slot = ctx.Message.SenderSlot;
+        _engine?.Remove(slot);
+        _autoSpawn?.ResetRun(ctx.Controller);
+        Chat.PrintToChat(slot, $"[{Name}] run reset");
         return HookResult.Handled;
     }
 
