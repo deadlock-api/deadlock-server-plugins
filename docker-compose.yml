@@ -7,10 +7,10 @@ services:
     env_file: .env
     volumes:
       - /etc/machine-id:/etc/machine-id:ro
-      - proton-normal:/opt/proton
-      - gamedata-normal:/home/steam/server
-      - compatdata-normal:/home/steam/.steam/steam/steamapps/compatdata
-      - dotnet-cache-normal:/opt/dotnet-cache
+      - proton:/opt/proton
+      - gamedata:/home/steam/server
+      - compatdata:/home/steam/.steam/steam/steamapps/compatdata
+      - dotnet-cache:/opt/dotnet-cache
     restart: unless-stopped
 
   lock-timer:
@@ -21,18 +21,14 @@ services:
     env_file: .env
     volumes:
       - /etc/machine-id:/etc/machine-id:ro
-      - proton-lock-timer:/opt/proton
-      - gamedata-lock-timer:/home/steam/server
-      - compatdata-lock-timer:/home/steam/.steam/steam/steamapps/compatdata
-      - dotnet-cache-lock-timer:/opt/dotnet-cache
+      - proton:/opt/proton
+      - gamedata:/home/steam/server
+      - compatdata:/home/steam/.steam/steam/steamapps/compatdata
+      - dotnet-cache:/opt/dotnet-cache
     restart: unless-stopped
 
 volumes:
-  proton-normal:
-  gamedata-normal:
-  compatdata-normal:
-  dotnet-cache-normal:
-  proton-lock-timer:
-  gamedata-lock-timer:
-  compatdata-lock-timer:
-  dotnet-cache-lock-timer:
+  proton:
+  gamedata:
+  compatdata:
+  dotnet-cache:
