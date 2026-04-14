@@ -1,10 +1,8 @@
 x-base: &base
   env_file: .env
-  volumes:
-    - /etc/machine-id:/etc/machine-id:ro
+  volumes: &base-volumes
     - proton:/opt/proton
-    - gamedata:/home/steam/server
-    - compatdata:/home/steam/.steam/steam/steamapps/compatdata
+    - gamefiles:/opt/gamefiles
     - dotnet-cache:/opt/dotnet-cache
   restart: unless-stopped
 
@@ -18,6 +16,12 @@ services:
     environment:
       - SERVER_PORT=27015
       - DEADWORKS_ENV_PORT=27015
+    volumes:
+      - proton:/opt/proton
+      - gamefiles:/opt/gamefiles
+      - dotnet-cache:/opt/dotnet-cache
+      - gamedata-normal:/home/steam/server
+      - compatdata-normal:/home/steam/.steam/steam/steamapps/compatdata
 
   lock-timer:
     <<: *base
@@ -28,9 +32,18 @@ services:
     environment:
       - SERVER_PORT=27016
       - DEADWORKS_ENV_PORT=27016
+    volumes:
+      - proton:/opt/proton
+      - gamefiles:/opt/gamefiles
+      - dotnet-cache:/opt/dotnet-cache
+      - gamedata-lock-timer:/home/steam/server
+      - compatdata-lock-timer:/home/steam/.steam/steam/steamapps/compatdata
 
 volumes:
   proton:
-  gamedata:
-  compatdata:
+  gamefiles:
+  gamedata-normal:
+  gamedata-lock-timer:
+  compatdata-normal:
+  compatdata-lock-timer:
   dotnet-cache:
