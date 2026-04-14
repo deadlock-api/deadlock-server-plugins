@@ -26,6 +26,8 @@ public class LockTimerPlugin : DeadworksPluginBase
     private bool _zonesRendered;
     private Zone? _startZone;
     private Zone? _endZone;
+    private IReadOnlyList<Zone> _checkpointZones = Array.Empty<Zone>();
+    private IReadOnlyList<string> _checkpointNames = Array.Empty<string>();
 
     public override void OnLoad(bool isReload)
     {
@@ -97,8 +99,12 @@ public class LockTimerPlugin : DeadworksPluginBase
                 return;
             }
 
-            (_startZone, _endZone) = _zoneConfig.GetForMap(map);
-            _engine.SetZones(_startZone, _endZone);
+            var zoneSet = _zoneConfig.GetForMap(map);
+            _startZone = zoneSet.Start;
+            _endZone   = zoneSet.End;
+            _checkpointZones = zoneSet.Checkpoints;
+            _checkpointNames = zoneSet.CheckpointNames;
+            _engine.SetZones(_startZone, _endZone, _checkpointZones, _checkpointNames);
             _autoSpawn?.SetStartZone(_startZone);
             _zonesRendered = false;
 
@@ -107,7 +113,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             else
                 Console.WriteLine(
                     $"[{Name}] Loaded zones for '{map}': start={(_startZone is null ? "none" : "set")}, " +
-                    $"end={(_endZone is null ? "none" : "set")}.");
+                    $"end={(_endZone is null ? "none" : "set")}, checkpoints={_checkpointZones.Count}.");
         }
         catch (Exception ex)
         {
@@ -174,6 +180,7 @@ public class LockTimerPlugin : DeadworksPluginBase
                     {
                         if (_startZone is not null) _renderer.Render(_startZone);
                         if (_endZone is not null) _renderer.Render(_endZone);
+                        foreach (var cp in _checkpointZones) _renderer.Render(cp);
                         Console.WriteLine($"[{Name}] Zone markers rendered.");
                     }
                     catch (Exception ex)
@@ -185,7 +192,7 @@ public class LockTimerPlugin : DeadworksPluginBase
                 _autoSpawn?.Tick(controller, pawn);
 
                 var run = _engine.GetRun(slot);
-                var finished = _engine.Tick(slot, pawn.Position, now);
+                var finished = _engine.Tick(slot, pawn.Position, now, OnCheckpointHit);
 
                 _timerHud?.Tick(slot, pawn, run, now);
 
@@ -200,16 +207,34 @@ public class LockTimerPlugin : DeadworksPluginBase
         }
     }
 
+    private void OnCheckpointHit(int slot, CheckpointSplit split)
+    {
+        var formatted = TimeFormatter.FormatTime(split.ElapsedMs);
+        Chat.PrintToChat(slot, $"[{Name}] {split.Name} — {formatted}");
+    }
+
     private void OnRunFinished(CCitadelPlayerController player, FinishedRun run)
     {
         int slot = player.EntityIndex - 1;
         _slotToSteamId.TryGetValue(slot, out var steamId);
+        string map = Server.MapName;
+        string playerName = player.PlayerName;
 
         _metrics?.SendRunFinished(
             steamId: (long)steamId,
-            map: Server.MapName,
+            map: map,
             timeMs: run.ElapsedMs,
-            playerName: player.PlayerName);
+            playerName: playerName);
+
+        foreach (var split in run.Splits)
+        {
+            _metrics?.SendCheckpointTime(
+                steamId: (long)steamId,
+                map: map,
+                checkpointName: split.Name,
+                timeMs: split.ElapsedMs,
+                playerName: playerName);
+        }
 
         var formatted = TimeFormatter.FormatTime(run.ElapsedMs);
         Chat.PrintToChat(slot, $"[LockTimer] finished in {formatted}");
@@ -221,11 +246,13 @@ public class LockTimerPlugin : DeadworksPluginBase
         var map = Server.MapName;
         string start = _startZone is null ? "none" : "set";
         string end   = _endZone   is null ? "none" : "set";
-        Chat.PrintToChat(ctx.Message.SenderSlot, $"[{Name}] {map}: start={start} end={end}");
+        Chat.PrintToChat(ctx.Message.SenderSlot,
+            $"[{Name}] {map}: start={start} end={end} checkpoints={_checkpointZones.Count}");
 
         _renderer?.ClearAll();
         if (_startZone is not null) _renderer?.Render(_startZone);
         if (_endZone   is not null) _renderer?.Render(_endZone);
+        foreach (var cp in _checkpointZones) _renderer?.Render(cp);
         return HookResult.Handled;
     }
 
@@ -249,6 +276,8 @@ public class LockTimerPlugin : DeadworksPluginBase
         Chat.PrintToChat(sender, $"[{Name}] pos: ({p.X:F1}, {p.Y:F1}, {p.Z:F1})");
         PrintZone(sender, "start", _startZone, p);
         PrintZone(sender, "end", _endZone, p);
+        for (int i = 0; i < _checkpointZones.Count; i++)
+            PrintZone(sender, _checkpointNames[i], _checkpointZones[i], p);
         return HookResult.Handled;
     }
 

@@ -25,13 +25,32 @@ public sealed class MetricsClient
     public void SendRunFinished(long steamId, string map, int timeMs, string playerName)
     {
         // Fire-and-forget: the game tick must not block on network IO.
-        _ = SendAsync(steamId, map, timeMs, playerName);
+        _ = SendAsync(steamId, map, timeMs, playerName,
+            metricName: "locktimer_run_time_ms",
+            extraMetadata: null);
     }
 
-    private async Task SendAsync(long steamId, string map, int timeMs, string playerName)
+    public void SendCheckpointTime(long steamId, string map, string checkpointName, int timeMs, string playerName)
+    {
+        _ = SendAsync(steamId, map, timeMs, playerName,
+            metricName: "locktimer_checkpoint_time_ms",
+            extraMetadata: new Dictionary<string, string> { ["checkpoint"] = checkpointName });
+    }
+
+    private async Task SendAsync(
+        long steamId,
+        string map,
+        int timeMs,
+        string playerName,
+        string metricName,
+        Dictionary<string, string>? extraMetadata)
     {
         try
         {
+            var metadata = new Dictionary<string, string> { ["player_name"] = playerName };
+            if (extraMetadata is not null)
+                foreach (var kv in extraMetadata) metadata[kv.Key] = kv.Value;
+
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_apiBase}/v1/servers/metrics")
             {
                 Content = JsonContent.Create(new
@@ -40,11 +59,8 @@ public sealed class MetricsClient
                     game_mode = _gameMode,
                     game_mode_version = (string?)null,
                     map = map,
-                    metadata = new Dictionary<string, string>
-                    {
-                        ["player_name"] = playerName,
-                    },
-                    metric_name = "locktimer_run_time_ms",
+                    metadata = metadata,
+                    metric_name = metricName,
                     metric_value = timeMs,
                     region = _region,
                     server_id = _serverId,

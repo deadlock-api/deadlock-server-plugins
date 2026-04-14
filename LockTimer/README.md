@@ -77,9 +77,21 @@ All commands use the `/` prefix in game chat.
 
 2. **Run**: Walk into the start zone (green outline). When you leave it, the timer starts. When you enter the end zone (red outline), the timer stops and your time is recorded.
 
-3. **Zone visualization**: Zones are rendered as colored block outlines in the game world. Green = start zone, red = end zone. The outlines appear automatically when a player connects.
+3. **Zone visualization**: Zones are rendered as colored block outlines in the game world. Green = start zone, red = end zone, blue = checkpoint. The outlines appear automatically when a player connects.
 
-4. **Records**: Personal bests are stored per Steam ID and map in a local SQLite database. Times persist across server restarts.
+4. **Checkpoints (optional)**: Add an ordered `checkpoints` list under a map in `zones.yaml`. The runner must touch each checkpoint in the listed order before the end zone will register a finish. Each checkpoint split is announced in chat and recorded as a `locktimer_checkpoint_time_ms` metric.
+
+   ```yaml
+   maps:
+     dl_midtown:
+       start: { min: [...], max: [...] }
+       end:   { min: [...], max: [...] }
+       checkpoints:
+         - { name: cp1, min: [...], max: [...] }
+         - { name: cp2, min: [...], max: [...] }
+   ```
+
+5. **Records**: Personal bests are stored per Steam ID and map in a local SQLite database. Times persist across server restarts.
 
 ## Database
 
