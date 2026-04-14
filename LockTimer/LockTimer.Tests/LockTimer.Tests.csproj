@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Zones\Zone.cs" Link="Src\Zone.cs" />
+    <Compile Include="..\Zones\ZoneKind.cs" Link="Src\ZoneKind.cs" />
+    <Compile Include="..\Zones\ZoneRepository.cs" Link="Src\ZoneRepository.cs" />
+    <Compile Include="..\Records\Record.cs" Link="Src\Record.cs" />
+    <Compile Include="..\Records\RecordRepository.cs" Link="Src\RecordRepository.cs" />
+    <Compile Include="..\Records\TimeFormatter.cs" Link="Src\TimeFormatter.cs" />
+    <Compile Include="..\Data\LockTimerDb.cs" Link="Src\LockTimerDb.cs" />
+    <Compile Include="..\Timing\RunState.cs" Link="Src\RunState.cs" />
+    <Compile Include="..\Timing\PlayerRun.cs" Link="Src\PlayerRun.cs" />
+    <Compile Include="..\Timing\TimerEngine.cs" Link="Src\TimerEngine.cs" />
+    <Compile Include="..\Timing\FinishedRun.cs" Link="Src\FinishedRun.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\Data\Migrations\*.sql" LinkBase="Data\Migrations" />
+  </ItemGroup>
+
+</Project>
