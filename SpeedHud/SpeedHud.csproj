@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SpeedHud</RootNamespace>
+    <AssemblyName>SpeedHud</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <DeadlockDir Condition="'$(DeadlockDir)' == ''">$(DEADLOCK_GAME_DIR)</DeadlockDir>
+    <DeadlockBin>$(DeadlockDir)\game\bin\win64</DeadlockBin>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="DeadworksManaged.Api">
+      <HintPath>$(DeadlockBin)\managed\DeadworksManaged.Api.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+    <Reference Include="Google.Protobuf">
+      <HintPath>$(DeadlockBin)\managed\Google.Protobuf.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToGame" AfterTargets="Build">
+    <ItemGroup>
+      <DeployFiles Include="$(OutputPath)SpeedHud.dll;$(OutputPath)SpeedHud.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)"
+          DestinationFolder="$(DeadlockBin)\managed\plugins"
+          SkipUnchangedFiles="false"
+          Retries="0"
+          ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>

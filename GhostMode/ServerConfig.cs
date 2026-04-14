@@ -1,6 +1,6 @@
 using DeadworksManaged.Api;
 
-namespace LockTimer.Runtime;
+namespace GhostMode;
 
 public static class ServerConfig
 {
@@ -19,7 +19,7 @@ public static class ServerConfig
         var cv = ConVar.Find(name);
         if (cv is null || !cv.IsValid)
         {
-            Console.WriteLine($"[LockTimer] convar not found: {name}");
+            Console.WriteLine($"[GhostMode] convar not found: {name}");
             return;
         }
         cv.SetInt(value);

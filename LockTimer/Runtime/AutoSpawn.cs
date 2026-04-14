@@ -6,22 +6,12 @@ namespace LockTimer.Runtime;
 
 public sealed class AutoSpawn
 {
-    private const int Team = 2;
-    private const Heroes DefaultHero = Heroes.Haze;
     private const float DropEpsilon = 32f;
 
     private readonly Dictionary<int, int> _lastPawnIndex = new();
     private Zone? _startZone;
 
     public void SetStartZone(Zone? startZone) => _startZone = startZone;
-
-    public void OnJoin(ClientFullConnectEvent args)
-    {
-        var controller = args.Controller;
-        if (controller is null) return;
-        controller.ChangeTeam(Team);
-        controller.SelectHero(DefaultHero);
-    }
 
     public void OnDisconnect(int slot) => _lastPawnIndex.Remove(slot);
 

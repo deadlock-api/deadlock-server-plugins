@@ -1,4 +1,4 @@
 {
   "normal": ["StatusPoker"],
-  "lock-timer": ["StatusPoker", "LockTimer"]
+  "lock-timer": ["StatusPoker", "GhostMode", "SpeedHud", "LockTimer"]
 }

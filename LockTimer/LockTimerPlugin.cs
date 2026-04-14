@@ -16,12 +16,9 @@ public class LockTimerPlugin : DeadworksPluginBase
     private ZoneConfig? _zoneConfig;
     private ZoneRenderer? _renderer;
     private TimerEngine? _engine;
-    private SpeedHud? _speedHud;
     private TimerHud? _timerHud;
     private MetricsClient? _metrics;
-    private PlayerIsolation? _isolation;
     private AutoSpawn? _autoSpawn;
-    private DamageBlocker? _damageBlocker;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
     private readonly Dictionary<int, long> _slotReadyAt = new();
     private IHandle? _tickTimer;
@@ -47,13 +44,10 @@ public class LockTimerPlugin : DeadworksPluginBase
             var region   = Env("REGION", "");
             _metrics = new MetricsClient(apiBase, secret, serverId, gameMode, region);
 
-            _renderer      = new ZoneRenderer();
-            _engine        = new TimerEngine();
-            _speedHud      = new SpeedHud();
-            _timerHud      = new TimerHud();
-            _isolation     = new PlayerIsolation();
-            _autoSpawn     = new AutoSpawn();
-            _damageBlocker = new DamageBlocker();
+            _renderer  = new ZoneRenderer();
+            _engine    = new TimerEngine();
+            _timerHud  = new TimerHud();
+            _autoSpawn = new AutoSpawn();
 
             // Timer.Every avoids the per-tick native interop overhead of OnGameFrame,
             // which caused thread starvation and client timeouts during connection.
@@ -106,7 +100,6 @@ public class LockTimerPlugin : DeadworksPluginBase
             (_startZone, _endZone) = _zoneConfig.GetForMap(map);
             _engine.SetZones(_startZone, _endZone);
             _autoSpawn?.SetStartZone(_startZone);
-            ServerConfig.Apply();
             _zonesRendered = false;
 
             if (_startZone is null && _endZone is null)
@@ -138,49 +131,11 @@ public class LockTimerPlugin : DeadworksPluginBase
         return true;
     }
 
-    public override void OnClientFullConnect(ClientFullConnectEvent args)
-    {
-        try
-        {
-            _autoSpawn?.OnJoin(args);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[{Name}] OnClientFullConnect failed: {ex}");
-        }
-    }
-
-    public override HookResult OnTakeDamage(TakeDamageEvent args)
-    {
-        try
-        {
-            return _damageBlocker?.Handle(args) ?? HookResult.Continue;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[{Name}] OnTakeDamage failed: {ex}");
-            return HookResult.Continue;
-        }
-    }
-
-    public override void OnCheckTransmit(CheckTransmitEvent args)
-    {
-        try
-        {
-            _isolation?.Handle(args);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[{Name}] OnCheckTransmit failed: {ex}");
-        }
-    }
-
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
     {
         try
         {
             _engine?.Remove(args.Slot);
-            _speedHud?.Remove(args.Slot);
             _timerHud?.Remove(args.Slot);
             _autoSpawn?.OnDisconnect(args.Slot);
             _slotToSteamId.Remove(args.Slot);
@@ -228,8 +183,6 @@ public class LockTimerPlugin : DeadworksPluginBase
                 }
 
                 _autoSpawn?.Tick(controller, pawn);
-
-                _speedHud?.Tick(slot, pawn);
 
                 var run = _engine.GetRun(slot);
                 var finished = _engine.Tick(slot, pawn.Position, now);
@@ -296,18 +249,6 @@ public class LockTimerPlugin : DeadworksPluginBase
         Chat.PrintToChat(sender, $"[{Name}] pos: ({p.X:F1}, {p.Y:F1}, {p.Z:F1})");
         PrintZone(sender, "start", _startZone, p);
         PrintZone(sender, "end", _endZone, p);
-        return HookResult.Handled;
-    }
-
-    [ChatCommand("speed")]
-    public HookResult OnSpeed(ChatCommandContext ctx)
-    {
-        if (_speedHud is null) return HookResult.Continue;
-        var pawn = ctx.Controller?.GetHeroPawn();
-        if (pawn is null) return HookResult.Handled;
-        int slot = ctx.Message.SenderSlot;
-        bool enabled = _speedHud.Toggle(slot, pawn);
-        Chat.PrintToChat(slot, $"[{Name}] speed HUD {(enabled ? "enabled" : "disabled")}");
         return HookResult.Handled;
     }
 

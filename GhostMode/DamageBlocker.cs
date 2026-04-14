@@ -1,6 +1,6 @@
 using DeadworksManaged.Api;
 
-namespace LockTimer.Runtime;
+namespace GhostMode;
 
 public sealed class DamageBlocker
 {

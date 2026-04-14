@@ -1,7 +1,7 @@
 using System.Numerics;
 using DeadworksManaged.Api;
 
-namespace LockTimer.Hud;
+namespace SpeedHud;
 
 /// <summary>
 /// Displays player speed using a CPointWorldText billboard entity parented to the player pawn.
@@ -46,7 +46,6 @@ public sealed class SpeedHud
 
         wt.SetMessage($"{rounded} u/s");
 
-        // Color-code: green < 500, yellow < 1000, red >= 1000
         if (rounded >= 1000)
             wt.SetColor(255, 60, 60, 255);
         else if (rounded >= 500)
@@ -65,7 +64,7 @@ public sealed class SpeedHud
             worldUnitsPerPx: 0.12f,
             r: 100, g: 255, b: 100, a: 255,
             fontName: "Reaver",
-            reorientMode: 1); // billboard, always faces camera
+            reorientMode: 1);
 
         if (wt is null) return;
 
@@ -73,7 +72,7 @@ public sealed class SpeedHud
         wt.DepthOffset = 0.1f;
         wt.JustifyHorizontal = HorizontalJustify.Center;
         wt.JustifyVertical = VerticalJustify.Center;
-        wt.Teleport(angles: new Vector3(0f, 0f, 90f)); // roll 90 to read left-to-right
+        wt.Teleport(angles: new Vector3(0f, 0f, 90f));
         wt.SetParent(pawn);
 
         _textEntities[slot] = wt;
