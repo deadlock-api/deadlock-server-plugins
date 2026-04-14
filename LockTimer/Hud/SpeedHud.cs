@@ -9,36 +9,31 @@ namespace LockTimer.Hud;
 /// </summary>
 public sealed class SpeedHud
 {
-    private readonly HashSet<int> _enabledSlots = new();
+    private readonly HashSet<int> _disabledSlots = new();
     private readonly Dictionary<int, CPointWorldText> _textEntities = new();
 
     public bool Toggle(int slot, CCitadelPlayerPawn pawn)
     {
-        if (!_enabledSlots.Remove(slot))
+        if (_disabledSlots.Add(slot))
         {
-            _enabledSlots.Add(slot);
-            SpawnText(slot, pawn);
-            return true;
+            DestroyText(slot);
+            return false;
         }
-        DestroyText(slot);
-        return false;
+        _disabledSlots.Remove(slot);
+        SpawnText(slot, pawn);
+        return true;
     }
 
     public void Remove(int slot)
     {
-        _enabledSlots.Remove(slot);
+        _disabledSlots.Remove(slot);
         DestroyText(slot);
     }
 
     public void Tick(int slot, CCitadelPlayerPawn pawn)
     {
-        // Auto-enable for all players; /speed toggles it off
-        if (!_enabledSlots.Contains(slot))
-        {
-            _enabledSlots.Add(slot);
-        }
+        if (_disabledSlots.Contains(slot)) return;
 
-        // Respawn if the entity was lost (e.g. after death/respawn)
         if (!_textEntities.TryGetValue(slot, out var wt) || wt.Handle == nint.Zero)
         {
             SpawnText(slot, pawn);

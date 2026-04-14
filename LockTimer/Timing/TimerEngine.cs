@@ -77,10 +77,6 @@ public sealed class TimerEngine
                 }
                 return null;
 
-            case RunState.Finished:
-                run.State = RunState.Idle;
-                return null;
-
             default:
                 return null;
         }
