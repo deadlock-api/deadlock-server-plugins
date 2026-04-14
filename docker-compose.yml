@@ -1,6 +1,6 @@
 services:
   normal:
-    image: ghcr.io/raimannma/deadlock-server-plugins/normal:latest
+    image: ghcr.io/deadlock-api/deadlock-server-plugins/normal:latest
     ports:
       - "${SERVER_PORT:-27015}:${SERVER_PORT:-27015}/udp"
       - "${SERVER_PORT:-27015}:${SERVER_PORT:-27015}/tcp"
@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   lock-timer:
-    image: ghcr.io/raimannma/deadlock-server-plugins/lock-timer:latest
+    image: ghcr.io/deadlock-api/deadlock-server-plugins/lock-timer:latest
     ports:
       - "${SERVER_PORT:-27015}:${SERVER_PORT:-27015}/udp"
       - "${SERVER_PORT:-27015}:${SERVER_PORT:-27015}/tcp"
