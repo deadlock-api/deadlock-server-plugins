@@ -357,7 +357,10 @@ public class DeathmatchPlugin : DeadworksPluginBase
     [GameEventHandler("player_hero_changed")]
     public HookResult OnPlayerHeroChanged(PlayerHeroChangedEvent args)
     {
-        ApplySpawnRitual(args.Userid?.As<CCitadelPlayerPawn>());
+        var pawn = args.Userid?.As<CCitadelPlayerPawn>();
+        if (pawn?.Controller is { } ctrl)
+            _heroSwapUntil.Remove(ctrl.EntityIndex);
+        ApplySpawnRitual(pawn);
         return HookResult.Continue;
     }
 
@@ -662,6 +665,110 @@ public class DeathmatchPlugin : DeadworksPluginBase
             if (!_cooldownSweep.Contains(key)) _cooldownStale.Add(key);
         foreach (var key in _cooldownStale)
             _writtenCooldowns.Remove(key);
+    }
+
+    private static readonly string[] _helpLines = {
+        "[DM] !help — show this message",
+        "[DM] !hero <name> — swap hero (fuzzy match, e.g. !hero grey -> Grey Talon)",
+        "[DM] !stuck / !suicide — kill yourself to respawn",
+    };
+
+    [ChatCommand("!help")]
+    public HookResult OnHelpCommand(ChatCommandContext ctx)
+    {
+        foreach (var line in _helpLines)
+            Chat.PrintToChat(ctx.Message.SenderSlot, line);
+        return HookResult.Handled;
+    }
+
+    [ChatCommand("!hero")]
+    public HookResult OnHeroCommand(ChatCommandContext ctx)
+    {
+        int slot = ctx.Message.SenderSlot;
+        var ctrl = ctx.Controller;
+        if (ctrl == null) return HookResult.Handled;
+
+        if (ctx.Args.Length == 0)
+        {
+            Chat.PrintToChat(slot, "[DM] usage: !hero <name>");
+            return HookResult.Handled;
+        }
+
+        var query = string.Join(' ', ctx.Args).Trim();
+        var matches = FuzzyMatchHero(query);
+        if (matches.Count == 0)
+        {
+            Chat.PrintToChat(slot, $"[DM] No hero matches '{query}'.");
+            return HookResult.Handled;
+        }
+        if (matches.Count > 1)
+        {
+            var names = string.Join(", ", matches.Take(6).Select(h => h.ToDisplayName()));
+            Chat.PrintToChat(slot, $"[DM] '{query}' is ambiguous: {names}");
+            return HookResult.Handled;
+        }
+
+        var hero = matches[0];
+        ctrl.SelectHero(hero);
+        Chat.PrintToChat(slot, $"[DM] Swapping to {hero.ToDisplayName()}.");
+        return HookResult.Handled;
+    }
+
+    [ChatCommand("!stuck")]
+    [ChatCommand("!suicide")]
+    public HookResult OnStuckCommand(ChatCommandContext ctx)
+    {
+        int slot = ctx.Message.SenderSlot;
+        var pawn = ctx.Controller?.GetHeroPawn()?.As<CCitadelPlayerPawn>();
+        if (pawn == null || !pawn.IsAlive)
+        {
+            Chat.PrintToChat(slot, "[DM] Not alive.");
+            return HookResult.Handled;
+        }
+
+        // Spawn protection zeroes damage and sets Invulnerable modifier bits — clear both so
+        // the suicide damage actually kills the player instead of being absorbed.
+        _invulnerableUntil.Remove(pawn.EntityIndex);
+        var mp = pawn.ModifierProp;
+        if (mp != null)
+        {
+            mp.SetModifierState(EModifierState.Invulnerable, false);
+            mp.SetModifierState(EModifierState.BulletInvulnerable, false);
+        }
+        pawn.Hurt(999_999f);
+        return HookResult.Handled;
+    }
+
+    private static List<Heroes> FuzzyMatchHero(string query)
+    {
+        var needle = query.Trim().ToLowerInvariant();
+        var available = Enum.GetValues<Heroes>()
+            .Where(h => h.GetHeroData()?.AvailableInGame == true)
+            .ToArray();
+
+        static string StripPrefix(string s) => s.StartsWith("hero_") ? s[5..] : s;
+
+        var candidates = available
+            .Select(h => (
+                hero: h,
+                display: h.ToDisplayName().ToLowerInvariant(),
+                enumN: h.ToString().ToLowerInvariant(),
+                internalN: StripPrefix(h.ToHeroName()).ToLowerInvariant()))
+            .ToArray();
+
+        bool Any(Func<(Heroes hero, string display, string enumN, string internalN), bool> pred, out List<Heroes> hits)
+        {
+            hits = candidates.Where(pred).Select(c => c.hero).Distinct().ToList();
+            return hits.Count > 0;
+        }
+
+        if (Any(c => c.display == needle || c.enumN == needle || c.internalN == needle, out var exact))
+            return exact;
+        if (Any(c => c.display.StartsWith(needle) || c.enumN.StartsWith(needle) || c.internalN.StartsWith(needle), out var prefix))
+            return prefix;
+        if (Any(c => c.display.Contains(needle) || c.enumN.Contains(needle) || c.internalN.Contains(needle), out var contains))
+            return contains;
+        return new List<Heroes>();
     }
 
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
