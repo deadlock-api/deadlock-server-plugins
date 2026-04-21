@@ -8,23 +8,22 @@
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-
-    <!-- Path to your Deadlock game installation. Override via environment variable
-         or pass on the command line: dotnet build -p:DeadlockDir="D:\Steam\..." -->
-    <DeadlockDir Condition="'$(DeadlockDir)' == ''">$(DEADLOCK_GAME_DIR)</DeadlockDir>
-    <DeadlockBin>$(DeadlockDir)\game\bin\win64</DeadlockBin>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Reference Include="DeadworksManaged.Api">
-      <HintPath>$(DeadlockBin)\managed\DeadworksManaged.Api.dll</HintPath>
+  <!-- Docker build: plugin is staged at /build/examples/plugins/<Plugin>/. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+    <ProjectReference Include="..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
-    <Reference Include="Google.Protobuf">
-      <HintPath>$(DeadlockBin)\managed\Google.Protobuf.dll</HintPath>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- Local dev: sibling deadworks repo. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+    <ProjectReference Include="..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
       <Private>false</Private>
-    </Reference>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -43,23 +42,19 @@
     </None>
   </ItemGroup>
 
-  <Target Name="DeployToGame" AfterTargets="Build">
-    <!-- Plugin + managed deps go in plugins/ (PluginLoadContext probes here) -->
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeadlockManagedDir)' != ''">
     <ItemGroup>
       <PluginFiles Include="$(OutputPath)LockTimer.dll;$(OutputPath)LockTimer.pdb" />
       <PluginFiles Include="$(OutputPath)YamlDotNet.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginFiles)"
-          DestinationFolder="$(DeadlockBin)\managed\plugins"
+          DestinationFolder="$(DeadlockManagedDir)\plugins"
           SkipUnchangedFiles="false"
           Retries="0"
           ContinueOnError="WarnAndContinue" />
 
-    <!-- Ship an example zones.yaml alongside the plugin. Users edit the copy in
-         $(DeadlockBin)\managed\LockTimer\zones.yaml at runtime; this default
-         just seeds the directory if nothing is there yet. -->
     <Copy SourceFiles="$(OutputPath)zones.yaml"
-          DestinationFolder="$(DeadlockBin)\managed\LockTimer"
+          DestinationFolder="$(DeadlockManagedDir)\LockTimer"
           SkipUnchangedFiles="true"
           Retries="0"
           ContinueOnError="WarnAndContinue" />

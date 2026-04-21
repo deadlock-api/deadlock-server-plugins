@@ -1,5 +1,5 @@
 {
   "normal": ["StatusPoker"],
   "lock-timer": ["StatusPoker", "LockTimer"],
-  "deathmatch": ["StatusPoker", "DeathmatchPlugin"]
+  "deathmatch": ["StatusPoker", "Deathmatch"]
 }

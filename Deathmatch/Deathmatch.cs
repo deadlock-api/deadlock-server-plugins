@@ -1,7 +1,7 @@
 using System.Numerics;
 using DeadworksManaged.Api;
 
-namespace DeathmatchPlugin;
+namespace Deathmatch;
 
 public class DeathmatchConfig
 {

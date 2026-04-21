@@ -2,11 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>StatusPoker</RootNamespace>
-    <AssemblyName>StatusPoker</AssemblyName>
+    <RootNamespace>Deathmatch</RootNamespace>
+    <AssemblyName>Deathmatch</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!-- Docker build: plugin is staged at /build/examples/plugins/<Plugin>/. -->
@@ -25,9 +26,19 @@
     </ProjectReference>
   </ItemGroup>
 
+  <!-- Google.Protobuf is loaded into the host's default ALC and shared with plugins;
+       compile against it but don't ship our own copy. Needed for NetMessages.Send<T>
+       where T : IMessage<T>. -->
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.29.3">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeadlockManagedDir)' != ''">
     <ItemGroup>
-      <DeployFiles Include="$(OutputPath)StatusPoker.dll;$(OutputPath)StatusPoker.pdb" />
+      <DeployFiles Include="$(OutputPath)Deathmatch.dll;$(OutputPath)Deathmatch.pdb" />
     </ItemGroup>
     <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(DeadlockManagedDir)\plugins" SkipUnchangedFiles="false" Retries="0" ContinueOnError="WarnAndContinue" />
   </Target>
