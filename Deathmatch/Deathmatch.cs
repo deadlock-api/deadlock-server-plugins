@@ -92,7 +92,7 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
     public override void OnStartupServer()
     {
-        Server.ExecuteCommand("hostname \"24/7 Team Deathmatch\"");
+        Server.ExecuteCommand("hostname \"24/7 TDM | Rank-Balanced | Max Abilities + Infinite Gold | 2s Respawn | Rotating Lanes\"");
         ConVar.Find("citadel_npc_spawn_enabled")?.SetInt(0);
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(2);
