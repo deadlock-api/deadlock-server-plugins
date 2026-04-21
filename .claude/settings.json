@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '## Knowledge base\\n\\nThis repo has an LLM-maintained wiki at knowledge-base/. Before substantive work:\\n- Read knowledge-base/wiki/index.md\\n- Skim the last entries in knowledge-base/wiki/log.md\\n\\nCapture non-obvious findings as notes under knowledge-base/raw/notes/YYYY-MM-DD-<slug>.md as you work. Ingest piled-up notes at task end. Full schema + workflows in knowledge-base/CLAUDE.md. Skills: /kb-ingest, /kb-query, /kb-lint.\\n'"
+          }
+        ]
+      }
+    ]
+  }
+}
