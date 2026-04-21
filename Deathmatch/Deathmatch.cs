@@ -1,4 +1,8 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Json;
 using System.Numerics;
+using System.Text.Json.Serialization;
 using DeadworksManaged.Api;
 
 namespace Deathmatch;
@@ -58,6 +62,25 @@ public class DeathmatchPlugin : DeadworksPluginBase
     private static readonly SchemaAccessor<short> _nFlexSlotsUnlocked = new("CCitadelTeam"u8, "m_nFlexSlotsUnlocked"u8);
     private static readonly SchemaAccessor<uint> _eLaneColor = new("CNPC_TrooperBoss"u8, "m_eLaneColor"u8);
     private const short AllFlexSlotUnlockBits = 0xF;
+
+    private static readonly HttpClient _rankHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
+    // Value.Rank = NaN is a tombstone (404 / unranked). Both real values and tombstones
+    // expire after RankCacheTtlMs.
+    private static readonly ConcurrentDictionary<uint, (float Rank, long ExpiresAt)> _rankCache = new();
+    private static readonly ConcurrentDictionary<uint, byte> _rankFetchInFlight = new();
+    // Environment.TickCount64 at which we'll allow another fetch for this account — set on
+    // transient failures so a full API outage doesn't trigger a 5s timeout on every join.
+    private static readonly ConcurrentDictionary<uint, long> _rankFetchCooldownUntil = new();
+    private const int RankFetchCooldownMs = 5 * 60 * 1000;
+    private const long RankCacheTtlMs = 24L * 60 * 60 * 1000;
+    private const string RankApiBase = "https://api.deadlock-api.com";
+    private const float MedianRank = 33f;
+    private const float RebalanceThreshold = 4f;
+    private const float MinRankDataCoverage = 0.67f;
+    private const int MaxSwapsPerWindow = 3;
+    private int _rotationsSinceRebalance;
+
+    private sealed record RankResponse([property: JsonPropertyName("raw_score")] float raw_score);
 
     [PluginConfig]
     public DeathmatchConfig Config { get; set; } = new();
@@ -285,21 +308,34 @@ public class DeathmatchPlugin : DeadworksPluginBase
         var controller = args.Controller;
         if (controller == null) return;
 
+        EnsureRankQueued((uint)controller.PlayerSteamId);
+
         var capturedTeams = _walkersByTeamLane.Keys.Select(k => k.team).Distinct().ToArray();
         var playTeams = capturedTeams.Length > 0 ? capturedTeams : new[] { 2, 3 };
         var teamCounts = playTeams.ToDictionary(t => t, _ => 0);
+        var teamRanks = playTeams.ToDictionary(t => t, _ => 0f);
         var usage = new Dictionary<int, int>();
         foreach (var p in Players.GetAll())
         {
             if (p.EntityIndex == controller.EntityIndex) continue;
-            if (teamCounts.ContainsKey(p.TeamNum)) teamCounts[p.TeamNum]++;
+            if (teamCounts.ContainsKey(p.TeamNum))
+            {
+                teamCounts[p.TeamNum]++;
+                teamRanks[p.TeamNum] += ReadRank((uint)p.PlayerSteamId);
+            }
             int id = p.PlayerDataGlobal.HeroID;
             if (id > 0) usage[id] = usage.GetValueOrDefault(id) + 1;
         }
 
-        int minTeamCount = teamCounts.Values.Min();
-        var smallestTeams = teamCounts.Where(kv => kv.Value == minTeamCount).Select(kv => kv.Key).ToArray();
-        int assignedTeam = smallestTeams[Random.Shared.Next(smallestTeams.Length)];
+        float joinerRank = ReadRank((uint)controller.PlayerSteamId);
+        float weakestPostJoinSum = float.PositiveInfinity;
+        foreach (var t in playTeams)
+        {
+            float s = teamRanks[t] + joinerRank;
+            if (s < weakestPostJoinSum) weakestPostJoinSum = s;
+        }
+        var weakestTeams = playTeams.Where(t => teamRanks[t] + joinerRank == weakestPostJoinSum).ToArray();
+        int assignedTeam = weakestTeams[Random.Shared.Next(weakestTeams.Length)];
         controller.ChangeTeam(assignedTeam);
 
         var available = Enum.GetValues<Heroes>()
@@ -313,7 +349,10 @@ public class DeathmatchPlugin : DeadworksPluginBase
         var hero = leastPresent[Random.Shared.Next(leastPresent.Length)];
         controller.SelectHero(hero);
         UnlockFlexSlots();
-        Console.WriteLine($"[DM] Slot {args.Slot} -> team {assignedTeam} (counts: {string.Join(",", teamCounts.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value}"))}), hero {hero.ToHeroName()} ({leastPresent.Length} tied at count {min})");
+        Console.WriteLine($"[DM] Slot {args.Slot} -> team {assignedTeam} " +
+            $"(counts: {string.Join(",", teamCounts.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value}"))}; " +
+            $"ranks: {string.Join(",", teamRanks.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value:F0}"))}), " +
+            $"hero {hero.ToHeroName()} ({leastPresent.Length} tied at count {min})");
     }
 
     public override HookResult OnTakeDamage(TakeDamageEvent args)
@@ -453,6 +492,13 @@ public class DeathmatchPlugin : DeadworksPluginBase
         // their next respawn because PickSpawnPoint targets ActiveLane.
         _activeLaneIdx = (_activeLaneIdx + 1) % _laneCycle.Length;
         _killsThisRound.Clear();
+
+        _rotationsSinceRebalance++;
+        if (_rotationsSinceRebalance >= _laneCycle.Length)
+        {
+            _rotationsSinceRebalance = 0;
+            TryRebalanceTeams();
+        }
     }
 
     private void HealToFull(CCitadelPlayerPawn? pawn)
@@ -769,6 +815,184 @@ public class DeathmatchPlugin : DeadworksPluginBase
         if (Any(c => c.display.Contains(needle) || c.enumN.Contains(needle) || c.internalN.Contains(needle), out var contains))
             return contains;
         return new List<Heroes>();
+    }
+
+    private static void EnsureRankQueued(uint accountId)
+    {
+        if (accountId == 0) return;
+        long now = Environment.TickCount64;
+        if (_rankCache.TryGetValue(accountId, out var cached) && now < cached.ExpiresAt) return;
+        if (_rankFetchCooldownUntil.TryGetValue(accountId, out var until) && now < until) return;
+        if (!_rankFetchInFlight.TryAdd(accountId, 0)) return;
+        _ = FetchRankAsync(accountId);
+    }
+
+    private static bool TryReadFreshRank(uint accountId, out float rank)
+    {
+        rank = 0f;
+        if (!_rankCache.TryGetValue(accountId, out var cached)) return false;
+        if (Environment.TickCount64 >= cached.ExpiresAt) return false;
+        if (float.IsNaN(cached.Rank)) return false;
+        rank = cached.Rank;
+        return true;
+    }
+
+    private static float ReadRank(uint accountId) =>
+        TryReadFreshRank(accountId, out var r) ? r : MedianRank;
+
+    private static async Task FetchRankAsync(uint accountId)
+    {
+        bool succeeded = false;
+        long expiresAt = Environment.TickCount64 + RankCacheTtlMs;
+        try
+        {
+            var resp = await _rankHttp.GetAsync($"{RankApiBase}/v1/players/{accountId}/rank-predict");
+            if (resp.StatusCode == HttpStatusCode.NotFound)
+            {
+                _rankCache[accountId] = (float.NaN, expiresAt);
+                succeeded = true;
+                return;
+            }
+            if (!resp.IsSuccessStatusCode) return;
+            var body = await resp.Content.ReadFromJsonAsync<RankResponse>();
+            if (body != null && !float.IsNaN(body.raw_score))
+            {
+                _rankCache[accountId] = (Math.Clamp(body.raw_score, 1f, 66f), expiresAt);
+                succeeded = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DM] rank fetch {accountId} failed: {ex.Message}");
+        }
+        finally
+        {
+            if (!succeeded)
+                _rankFetchCooldownUntil[accountId] = Environment.TickCount64 + RankFetchCooldownMs;
+            _rankFetchInFlight.TryRemove(accountId, out _);
+        }
+    }
+
+    private readonly record struct RebalanceEntry(int Idx, uint AccountId, float Rank, bool KnownRank);
+
+    private void TryRebalanceTeams()
+    {
+        var teamA = new List<RebalanceEntry>();
+        var teamB = new List<RebalanceEntry>();
+        foreach (var ctrl in Players.GetAll())
+        {
+            List<RebalanceEntry>? bucket = ctrl.TeamNum switch { 2 => teamA, 3 => teamB, _ => null };
+            if (bucket == null) continue;
+            uint aid = (uint)ctrl.PlayerSteamId;
+            EnsureRankQueued(aid);
+            bool known = TryReadFreshRank(aid, out var r);
+            bucket.Add(new RebalanceEntry(ctrl.EntityIndex, aid, known ? r : MedianRank, known));
+        }
+
+        int total = teamA.Count + teamB.Count;
+        if (total < 2 || teamA.Count == 0 || teamB.Count == 0) return;
+
+        int knownCount = teamA.Count(x => x.KnownRank) + teamB.Count(x => x.KnownRank);
+        if ((float)knownCount / total < MinRankDataCoverage)
+        {
+            Console.WriteLine($"[DM] rebalance skipped: only {knownCount}/{total} ranks known");
+            return;
+        }
+
+        float sumA = teamA.Sum(x => x.Rank);
+        float sumB = teamB.Sum(x => x.Rank);
+        float avgDiff = MathF.Abs(sumA / teamA.Count - sumB / teamB.Count);
+        if (avgDiff < RebalanceThreshold)
+        {
+            Console.WriteLine($"[DM] teams balanced (avgDiff={avgDiff:F2}, sumA={sumA:F1} sumB={sumB:F1})");
+            return;
+        }
+
+        var swappedIdxs = new HashSet<int>();
+        int swapCount = 0;
+        for (int iter = 0; iter < MaxSwapsPerWindow; iter++)
+        {
+            float currentDiff = MathF.Abs(sumA - sumB);
+            float bestDiff = currentDiff;
+            int bestA = -1, bestB = -1;
+            for (int i = 0; i < teamA.Count; i++)
+            {
+                if (swappedIdxs.Contains(teamA[i].Idx)) continue;
+                for (int j = 0; j < teamB.Count; j++)
+                {
+                    if (swappedIdxs.Contains(teamB[j].Idx)) continue;
+                    float newA = sumA - teamA[i].Rank + teamB[j].Rank;
+                    float newB = sumB - teamB[j].Rank + teamA[i].Rank;
+                    float d = MathF.Abs(newA - newB);
+                    if (d < bestDiff - 0.001f)
+                    {
+                        bestDiff = d;
+                        bestA = i;
+                        bestB = j;
+                    }
+                }
+            }
+            if (bestA < 0) break;
+
+            var a = teamA[bestA];
+            var b = teamB[bestB];
+            string nameA = GetControllerName(a.Idx);
+            string nameB = GetControllerName(b.Idx);
+            bool okA = ApplyTeamSwap(a.Idx, 3);
+            bool okB = ApplyTeamSwap(b.Idx, 2);
+            if (!okA || !okB) break;
+
+            swappedIdxs.Add(a.Idx);
+            swappedIdxs.Add(b.Idx);
+            teamA.RemoveAt(bestA);
+            teamB.RemoveAt(bestB);
+            teamA.Add(b);
+            teamB.Add(a);
+            sumA = sumA - a.Rank + b.Rank;
+            sumB = sumB - b.Rank + a.Rank;
+            swapCount++;
+
+            Chat.PrintToChatAll($"[DM] Rebalance: {nameA} → {TeamName(3)}");
+            Chat.PrintToChatAll($"[DM] Rebalance: {nameB} → {TeamName(2)}");
+        }
+
+        if (swapCount == 0)
+        {
+            Console.WriteLine($"[DM] rebalance: no improving swap found (avgDiff={avgDiff:F2})");
+            return;
+        }
+
+        float finalAvgDiff = MathF.Abs(sumA / teamA.Count - sumB / teamB.Count);
+        NetMessages.Send(new CCitadelUserMsg_HudGameAnnouncement
+        {
+            TitleLocstring = "Team Rebalance",
+            DescriptionLocstring = $"Swapped {swapCount} player(s)  |  Amber {sumA:F0} ↔ Sapphire {sumB:F0}",
+        }, RecipientFilter.All);
+        Console.WriteLine($"[DM] rebalance: {swapCount} swap(s), sumA={sumA:F1} sumB={sumB:F1} avgDiff={avgDiff:F2}->{finalAvgDiff:F2}");
+    }
+
+    private static string GetControllerName(int idx) =>
+        CBaseEntity.FromIndex<CCitadelPlayerController>(idx)?.PlayerName ?? "?";
+
+    private bool ApplyTeamSwap(int idx, int newTeam)
+    {
+        var ctrl = CBaseEntity.FromIndex<CCitadelPlayerController>(idx);
+        if (ctrl == null) return false;
+        ctrl.ChangeTeam(newTeam);
+        var pawn = ctrl.GetHeroPawn()?.As<CCitadelPlayerPawn>();
+        if (pawn != null && pawn.IsAlive)
+        {
+            // Mirror !suicide: clear spawn protection so the killing damage actually lands.
+            _invulnerableUntil.Remove(pawn.EntityIndex);
+            var mp = pawn.ModifierProp;
+            if (mp != null)
+            {
+                mp.SetModifierState(EModifierState.Invulnerable, false);
+                mp.SetModifierState(EModifierState.BulletInvulnerable, false);
+            }
+            pawn.Hurt(999_999f);
+        }
+        return true;
     }
 
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
