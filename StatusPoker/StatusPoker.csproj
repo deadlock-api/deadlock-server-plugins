@@ -9,8 +9,17 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
 
+  <!-- Standalone CI / prebuilt deadworks: -p:DeadlockDir=... points at an unpacked release. -->
+  <ItemGroup Condition="'$(DeadlockDir)' != ''">
+    <Reference Include="DeadworksManaged.Api">
+      <HintPath>$(DeadlockDir)\game\bin\win64\managed\DeadworksManaged.Api.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+  </ItemGroup>
+
   <!-- Docker build: plugin is staged at /build/examples/plugins/<Plugin>/. -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+  <ItemGroup Condition="'$(DeadlockDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
     <ProjectReference Include="..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
@@ -18,7 +27,7 @@
   </ItemGroup>
 
   <!-- Local dev: sibling deadworks repo. -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+  <ItemGroup Condition="'$(DeadlockDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
     <ProjectReference Include="..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
