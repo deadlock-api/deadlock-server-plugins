@@ -38,6 +38,10 @@ public class StatusPoker : DeadworksPluginBase
 
     public override void OnStartupServer()
     {
+        var regionId = ResolveRegionId(_region);
+        ConVar.Find("sv_region")?.SetInt(regionId);
+        Console.WriteLine($"[{Name}] sv_region={regionId} (from \"{_region}\")");
+
         _cts?.Cancel();
         _cts?.Dispose();
         _cts = new CancellationTokenSource();
@@ -93,6 +97,28 @@ public class StatusPoker : DeadworksPluginBase
     }
 
     private static int GetCurrentPlayerCount() => Players.GetAll().Count();
+
+    private static readonly (int Id, string[] Aliases)[] RegionAliases =
+    {
+        (0,   new[] { "0", "us-east", "useast", "use", "na-east", "naeast", "nae", "east", "us", "na", "usa", "america", "north-america", "northamerica" }),
+        (1,   new[] { "1", "us-west", "uswest", "usw", "na-west", "nawest", "naw", "west" }),
+        (2,   new[] { "2", "sa", "south-america", "southamerica", "br", "brazil", "latam", "latin-america" }),
+        (3,   new[] { "3", "eu", "europe", "eu-west", "euwest", "eu-east", "eueast", "euw", "eue" }),
+        (4,   new[] { "4", "asia", "as", "sea", "southeast-asia", "southeastasia", "cn", "china", "jp", "japan", "kr", "korea" }),
+        (5,   new[] { "5", "au", "oce", "oceania", "australia", "anz" }),
+        (6,   new[] { "6", "me", "middle-east", "middleeast", "mena" }),
+        (7,   new[] { "7", "af", "africa" }),
+        (255, new[] { "255", "world", "any", "all", "global" }),
+    };
+
+    private static int ResolveRegionId(string input)
+    {
+        var key = (input ?? "").Trim().ToLowerInvariant().Replace('_', '-').Replace(' ', '-');
+        if (string.IsNullOrEmpty(key)) return -1;
+        foreach (var (id, aliases) in RegionAliases)
+            if (Array.IndexOf(aliases, key) >= 0) return id;
+        return -1;
+    }
 
     public override void OnUnload()
     {
