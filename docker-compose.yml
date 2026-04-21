@@ -39,11 +39,29 @@ services:
       - gamedata-lock-timer:/home/steam/server
       - compatdata-lock-timer:/home/steam/.steam/steam/steamapps/compatdata
 
+  deathmatch:
+    <<: *base
+    image: ghcr.io/deadlock-api/deadlock-server-plugins/deathmatch:latest
+    ports:
+      - "27017:27017/udp"
+      - "27017:27017/tcp"
+    environment:
+      - SERVER_PORT=27017
+      - DEADWORKS_ENV_PORT=27017
+    volumes:
+      - proton:/opt/proton
+      - gamefiles:/opt/gamefiles
+      - dotnet-cache:/opt/dotnet-cache
+      - gamedata-deathmatch:/home/steam/server
+      - compatdata-deathmatch:/home/steam/.steam/steam/steamapps/compatdata
+
 volumes:
   proton:
   gamefiles:
   gamedata-normal:
   gamedata-lock-timer:
+  gamedata-deathmatch:
   compatdata-normal:
   compatdata-lock-timer:
+  compatdata-deathmatch:
   dotnet-cache:
