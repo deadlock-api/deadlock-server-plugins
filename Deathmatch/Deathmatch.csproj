@@ -19,20 +19,22 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Docker build: plugin is staged at /build/examples/plugins/<Plugin>/. -->
-  <ItemGroup Condition="'$(DeadlockDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
-    <ProjectReference Include="..\..\..\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
-      <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </ProjectReference>
-  </ItemGroup>
-
   <!-- Local dev: sibling deadworks repo. -->
   <ItemGroup Condition="'$(DeadlockDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
     <ProjectReference Include="..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
     </ProjectReference>
+  </ItemGroup>
+
+  <!-- Docker build (deadworks extra-plugins): the deadworks Dockerfile injects a
+       Directory.Build.targets adding /artifacts/managed to AssemblySearchPaths,
+       so a bare assembly reference resolves against the already-published
+       DeadworksManaged.Api.dll. -->
+  <ItemGroup Condition="'$(DeadlockDir)' == '' and !Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+    <Reference Include="DeadworksManaged.Api">
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- Google.Protobuf is loaded into the host's default ALC and shared with plugins;
