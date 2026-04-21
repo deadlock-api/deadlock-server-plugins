@@ -77,6 +77,7 @@ public class StatusPoker : DeadworksPluginBase
                     region = _region,
                     ip = _ip,
                     port = _port,
+                    hostname = ConVar.Find("hostname")?.GetString() ?? "",
                     current_player_count = (uint)GetCurrentPlayerCount(),
                 }),
             };
