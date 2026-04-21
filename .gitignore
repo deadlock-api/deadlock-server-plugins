@@ -1,2 +1,4 @@
 .staging/
 .idea/
+bin/
+obj/
