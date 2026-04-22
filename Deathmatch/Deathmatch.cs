@@ -32,6 +32,11 @@ public class DeathmatchPlugin : DeadworksPluginBase
     // checked on selecthero/citadel_hero_pick to allow a brief post-death swap.
     private readonly Dictionary<int, float> _heroSwapUntil = new();
 
+    // Queued hero set by `!hero <name>`. Applied on `player_death` so the engine
+    // respawns the player as the chosen hero (SelectHero-while-alive would swap
+    // mid-fight). Cleared on manual hero change + disconnect.
+    private readonly Dictionary<int, Heroes> _pendingHeroSwap = new();
+
     private const string CmdSelectHero = "selecthero";
     private const string CmdCitadelHeroPick = "citadel_hero_pick";
 
@@ -357,7 +362,10 @@ public class DeathmatchPlugin : DeadworksPluginBase
     {
         var pawn = args.Userid?.As<CCitadelPlayerPawn>();
         if (pawn?.Controller is { } ctrl)
+        {
             _heroSwapUntil.Remove(ctrl.EntityIndex);
+            _pendingHeroSwap.Remove(ctrl.EntityIndex);
+        }
         ApplySpawnRitual(pawn);
         return HookResult.Continue;
     }
@@ -368,6 +376,16 @@ public class DeathmatchPlugin : DeadworksPluginBase
         var pawn = args.UseridPawn?.As<CCitadelPlayerPawn>();
         if (pawn != null)
             _lastDeathPos[pawn.EntityIndex] = new Vector3(args.VictimX, args.VictimY, args.VictimZ);
+
+        // Apply queued `!hero` swap now, while the player is dead — SelectHero during the
+        // dead-state respawn window tells the engine which hero to spawn as. Calling it
+        // post-respawn would either swap mid-fight or apply only to the *next* respawn.
+        if (pawn?.Controller is { } victimCtrl
+            && _pendingHeroSwap.TryGetValue(victimCtrl.EntityIndex, out var queuedHero))
+        {
+            victimCtrl.SelectHero(queuedHero);
+            Console.WriteLine($"[DM] Applied queued hero swap for ent#{victimCtrl.EntityIndex}: {queuedHero.ToDisplayName()}");
+        }
 
         var attacker = args.AttackerController;
         var victimPawn = args.UseridPawn;
@@ -651,9 +669,65 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
     private static readonly string[] _helpLines = {
         "[DM] !help — show this message",
-        "[DM] !hero <name> — swap hero (fuzzy match, e.g. !hero grey -> Grey Talon)",
+        "[DM] !hero <name> — queue hero swap for next respawn (fuzzy match, e.g. !hero grey -> Grey Talon)",
         "[DM] !stuck / !suicide — kill yourself to respawn",
     };
+
+    [Command("hero", Description = "Queue a hero swap for your next respawn (fuzzy name match)")]
+    public void CmdHero(CCitadelPlayerController caller, params string[] nameParts)
+    {
+        if (nameParts.Length == 0)
+            throw new CommandException("usage: !hero <name>");
+
+        var query = string.Join(' ', nameParts).Trim();
+        var matches = FuzzyMatchHero(query);
+        if (matches.Count == 0)
+            throw new CommandException($"No hero matches '{query}'.");
+        if (matches.Count > 1)
+        {
+            var names = string.Join(", ", matches.Take(6).Select(h => h.ToDisplayName()));
+            throw new CommandException($"'{query}' is ambiguous: {names}");
+        }
+
+        var hero = matches[0];
+        _pendingHeroSwap[caller.EntityIndex] = hero;
+        Chat.PrintToChat(caller.Slot, $"[DM] Queued swap to {hero.ToDisplayName()} — applies on next respawn.");
+    }
+
+    // Exact → prefix → contains, across display name, enum name, and internal "hero_*" name.
+    // Duplicated from HeroSelectPlugin.FuzzyMatchHero — keeping a local copy avoids a
+    // cross-plugin assembly reference for ~30 lines of matching code.
+    private static List<Heroes> FuzzyMatchHero(string query)
+    {
+        var needle = query.Trim().ToLowerInvariant();
+        var available = Enum.GetValues<Heroes>()
+            .Where(h => h.GetHeroData()?.AvailableInGame == true)
+            .ToArray();
+
+        static string StripPrefix(string s) => s.StartsWith("hero_") ? s[5..] : s;
+
+        var candidates = available
+            .Select(h => (
+                hero: h,
+                display: h.ToDisplayName().ToLowerInvariant(),
+                enumN: h.ToString().ToLowerInvariant(),
+                internalN: StripPrefix(h.ToHeroName()).ToLowerInvariant()))
+            .ToArray();
+
+        bool Any(Func<(Heroes hero, string display, string enumN, string internalN), bool> pred, out List<Heroes> hits)
+        {
+            hits = candidates.Where(pred).Select(c => c.hero).Distinct().ToList();
+            return hits.Count > 0;
+        }
+
+        if (Any(c => c.display == needle || c.enumN == needle || c.internalN == needle, out var exact))
+            return exact;
+        if (Any(c => c.display.StartsWith(needle) || c.enumN.StartsWith(needle) || c.internalN.StartsWith(needle), out var prefix))
+            return prefix;
+        if (Any(c => c.display.Contains(needle) || c.enumN.Contains(needle) || c.internalN.Contains(needle), out var contains))
+            return contains;
+        return new List<Heroes>();
+    }
 
     [ChatCommand("!help")]
     public HookResult OnHelpCommand(ChatCommandContext ctx)
@@ -873,6 +947,7 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
         _killsThisRound.Remove(controller.EntityIndex);
         _heroSwapUntil.Remove(controller.EntityIndex);
+        _pendingHeroSwap.Remove(controller.EntityIndex);
         var pawn = controller.GetHeroPawn();
         if (pawn != null)
         {
