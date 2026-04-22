@@ -16,6 +16,7 @@ services:
     environment:
       - SERVER_PORT=27015
       - DEADWORKS_ENV_PORT=27015
+      - DEADWORKS_ENV_HOSTNAME=24/7 Deadlock | Vanilla
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
@@ -32,6 +33,7 @@ services:
     environment:
       - SERVER_PORT=27016
       - DEADWORKS_ENV_PORT=27016
+      - DEADWORKS_ENV_HOSTNAME=24/7 Lock Timer | Zone-Based Speedrun
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
@@ -48,6 +50,7 @@ services:
     environment:
       - SERVER_PORT=27017
       - DEADWORKS_ENV_PORT=27017
+      - DEADWORKS_ENV_HOSTNAME=24/7 TDM | Rank-Balanced | Max Abilities + Infinite Gold | 2s Respawn | Rotating Lanes
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
@@ -64,6 +67,7 @@ services:
     environment:
       - SERVER_PORT=27018
       - DEADWORKS_ENV_PORT=27018
+      - DEADWORKS_ENV_HOSTNAME=24/7 Trooper Invasion | Co-op PvE | Defend the Patron
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles

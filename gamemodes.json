@@ -1,6 +1,6 @@
 {
-  "normal": ["StatusPoker"],
-  "lock-timer": ["StatusPoker", "LockTimer"],
-  "deathmatch": ["StatusPoker", "Deathmatch"],
-  "trooper-invasion": ["StatusPoker", "TrooperInvasion"]
+  "normal": ["StatusPoker", "Hostname"],
+  "lock-timer": ["StatusPoker", "LockTimer", "Hostname"],
+  "deathmatch": ["StatusPoker", "Deathmatch", "Hostname"],
+  "trooper-invasion": ["StatusPoker", "TrooperInvasion", "Hostname"]
 }

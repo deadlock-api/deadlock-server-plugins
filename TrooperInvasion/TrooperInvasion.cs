@@ -89,7 +89,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // streaming. Mutating these at runtime (mid-frame, from !startwaves) crashed
         // the engine natively — likely because they re-seed spawn-interval tables
         // or resize per-lane buffers and the engine doesn't re-entrancy-guard it.
-        Server.ExecuteCommand("hostname \"24/7 Trooper Invasion | Co-op PvE | Defend the Patron\"");
         try { ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0); } catch (Exception ex) { Console.WriteLine($"[TI] convar trooper_spawn: {ex.Message}"); }
         try { ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1); } catch (Exception ex) { Console.WriteLine($"[TI] convar purchasing: {ex.Message}"); }
         try { ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3); } catch (Exception ex) { Console.WriteLine($"[TI] convar respawn_time: {ex.Message}"); }
