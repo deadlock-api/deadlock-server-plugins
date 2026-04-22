@@ -109,6 +109,11 @@ services:
       SERVER_PORT: 27018
       DEADWORKS_ENV_PORT: 27018
       DEADWORKS_ENV_HOSTNAME: 24/7 Trooper Invasion | Co-op PvE | Defend the Patron
+      # PostHog capture (optional — TI stats are skipped if POSTHOG_KEY or
+      # STATS_SALT is unset). Values come from .env; see .env.example.
+      DEADWORKS_ENV_POSTHOG_HOST: ${DEADWORKS_ENV_POSTHOG_HOST:-https://us.i.posthog.com}
+      DEADWORKS_ENV_POSTHOG_KEY: ${DEADWORKS_ENV_POSTHOG_KEY:-}
+      DEADWORKS_ENV_STATS_SALT: ${DEADWORKS_ENV_STATS_SALT:-}
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles

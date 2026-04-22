@@ -1,4 +1,5 @@
 using DeadworksManaged.Api;
+using TrooperInvasion.Stats;
 
 namespace TrooperInvasion;
 
@@ -72,11 +73,25 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private int _waveNum;
     private bool _modeOver;
 
+    // Session-scoped stats accumulators. A "session" spans from first-player-
+    // joins-empty-server to last-player-leaves (or victory/defeat, whichever
+    // comes first). Null _sessionStartUtc means no active session — gates
+    // session-outcome emission so HandleDefeat → last-disconnect doesn't
+    // double-fire.
+    private DateTime? _sessionStartUtc;
+    private int _peakPlayers;
+    private long _playerCountSampleSum;
+    private int _playerCountSampleCount;
+    private int _deathsThisWave;
+    private int _deathsPrevWave;
+    private readonly Dictionary<int, DateTime> _playerJoinTimes = new();
+
     [PluginConfig]
     public TrooperInvasionConfig Config { get; set; } = new();
 
     public override void OnLoad(bool isReload)
     {
+        StatsClient.Configure();
         Console.WriteLine(isReload ? "TrooperInvasion reloaded!" : "TrooperInvasion loaded!");
     }
 
@@ -119,6 +134,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _aliveEnemyTroopers.Clear();
         _starterGoldSeeded.Clear();
         _voteSkipSlots.Clear();
+        ResetSessionStats();
 
         // Match-clock and GameState left to the engine — the HUD clock runs natively.
         // UnlockFlexSlots scheduled per-player-join in OnClientFullConnect, not at
@@ -142,6 +158,56 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private int HumanPlayerCount(int excludeEntityIndex = -1) =>
         Players.GetAll().Count(p => p.TeamNum == HumanTeam && p.EntityIndex != excludeEntityIndex);
 
+    // Session-stats bookkeeping. Centralised so join/leave/wave-start/outcome
+    // paths can call these without re-implementing the accumulator math.
+    private void ResetSessionStats()
+    {
+        _sessionStartUtc = null;
+        _peakPlayers = 0;
+        _playerCountSampleSum = 0;
+        _playerCountSampleCount = 0;
+        _deathsThisWave = 0;
+        _deathsPrevWave = 0;
+        _playerJoinTimes.Clear();
+    }
+
+    private void EnsureSessionStarted()
+    {
+        if (_sessionStartUtc == null) _sessionStartUtc = DateTime.UtcNow;
+    }
+
+    private void SamplePlayerCount(int count)
+    {
+        if (count > _peakPlayers) _peakPlayers = count;
+        _playerCountSampleSum += count;
+        _playerCountSampleCount++;
+    }
+
+    // Single-shot: further calls after outcome is emitted become no-ops because
+    // _sessionStartUtc is cleared. Prevents HandleDefeat → last-disconnect
+    // double-emission when the defeat cascade triggers players to leave.
+    private void EmitSessionOutcome(string outcome)
+    {
+        if (!StatsClient.Enabled || _sessionStartUtc == null) return;
+        int duration = (int)(DateTime.UtcNow - _sessionStartUtc.Value).TotalSeconds;
+        double avg = _playerCountSampleCount > 0
+            ? (double)_playerCountSampleSum / _playerCountSampleCount
+            : 0;
+        StatsClient.Capture("ti_session_outcome", null, new Dictionary<string, object?>
+        {
+            ["outcome"] = outcome,
+            ["highest_wave"] = _waveNum,
+            ["highest_round"] = _roundNum,
+            // Cumulative wave count across rounds — useful for "survived N
+            // waves total" comparisons independent of round-length tuning.
+            ["total_waves"] = Math.Max(0, _roundNum - 1) * RoundLength + _waveNum,
+            ["duration_s"] = duration,
+            ["peak_players"] = _peakPlayers,
+            ["avg_players"] = Math.Round(avg, 2),
+        });
+        _sessionStartUtc = null;
+    }
+
     private float ComputeWaveInterval(int humans)
     {
         // Linear interp: 1 player → SlowWaveIntervalSeconds, 32 → FastWaveIntervalSeconds.
@@ -156,6 +222,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _wavesActive = true;
         Console.WriteLine($"[TI] Wave scheduler armed (round {_roundNum}).");
         AnnounceHud($"ROUND {_roundNum}", $"First wave in {FirstWaveGraceSeconds:0}s — defend the Patron!");
+        EnsureSessionStarted();
+        StatsClient.Capture("ti_round_started", null, new Dictionary<string, object?>
+        {
+            ["round"] = _roundNum,
+            ["players"] = HumanPlayerCount(),
+        });
         _pendingWaveTimer?.Cancel();
         _pendingWaveTimer = Timer.Once(((int)(FirstWaveGraceSeconds * 1000)).Milliseconds(), () =>
         {
@@ -306,6 +378,24 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         float interval = ComputeWaveInterval(humans);
         float burstSeconds = ComputeBurstSeconds(_waveNum, humans);
 
+        // Stats emission point: deaths-during-the-wave-that-just-ended roll
+        // forward into this event's `deaths_prev_wave`, then reset the counter.
+        // Sample player count here too — waves fire every 5–20s, which is
+        // dense enough to give a reasonable avg_players estimate.
+        SamplePlayerCount(humans);
+        StatsClient.Capture("ti_wave_started", null, new Dictionary<string, object?>
+        {
+            ["wave"] = _waveNum,
+            ["round"] = _roundNum,
+            ["players"] = humans,
+            ["deaths_prev_wave"] = _deathsPrevWave,
+            ["alive_enemy_troopers"] = alive,
+            ["active_lanes"] = activeLanes,
+            ["gold_reward"] = goldReward,
+        });
+        _deathsPrevWave = _deathsThisWave;
+        _deathsThisWave = 0;
+
         // Route mid-game ConVar writes through Server.ExecuteCommand rather than
         // ConVar.Find().SetInt. The direct-Set path crashed the engine natively on
         // !startwaves — the console path goes through the engine's own CCvar
@@ -385,9 +475,33 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     {
         if (_modeOver) return HookResult.Continue;
         var killed = CBaseEntity.FromIndex(args.EntindexKilled);
-        if (killed?.DesignerName != PatronDesigner) return HookResult.Continue;
-        if (killed.TeamNum == HumanTeam) HandleDefeat();
-        else                              HandleVictory();
+        if (killed == null) return HookResult.Continue;
+
+        if (killed.DesignerName == PatronDesigner)
+        {
+            if (killed.TeamNum == HumanTeam) HandleDefeat();
+            else                              HandleVictory();
+            return HookResult.Continue;
+        }
+
+        // Human-player death tracking (stats-only; no gameplay effect).
+        if (StatsClient.Enabled && killed.TeamNum == HumanTeam)
+        {
+            var pawn = killed.As<CCitadelPlayerPawn>();
+            var controller = pawn?.Controller;
+            if (controller != null)
+            {
+                _deathsThisWave++;
+                var hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
+                StatsClient.Capture("ti_player_died", hashed, new Dictionary<string, object?>
+                {
+                    ["wave"] = _waveNum,
+                    ["round"] = _roundNum,
+                    ["hero_id"] = controller.PlayerDataGlobal.HeroID,
+                });
+            }
+        }
+
         return HookResult.Continue;
     }
 
@@ -397,6 +511,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
         AnnounceHud("VICTORY!", $"Sapphire Patron destroyed — survived {_waveNum} waves");
         Console.WriteLine($"[TI] VICTORY at wave {_waveNum}");
+        EmitSessionOutcome("victory");
     }
 
     private void HandleDefeat()
@@ -405,6 +520,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
         AnnounceHud("DEFEAT", $"Amber Patron has fallen at wave {_waveNum}");
         Console.WriteLine($"[TI] DEFEAT at wave {_waveNum}");
+        EmitSessionOutcome("defeat");
     }
 
     public override void OnClientFullConnect(ClientFullConnectEvent args)
@@ -433,6 +549,22 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         controller.SelectHero(hero);
 
         Console.WriteLine($"[TI] Slot {args.Slot} -> team {HumanTeam}, hero {hero.ToHeroName()}");
+
+        // Stats: record join time for session_duration_s on leave, emit
+        // player_joined, and sample the new player count. Session start itself
+        // happens lazily in ArmWaves (just below) via EnsureSessionStarted.
+        _playerJoinTimes[controller.Slot] = DateTime.UtcNow;
+        if (StatsClient.Enabled)
+        {
+            var hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
+            StatsClient.Capture("ti_player_joined", hashed, new Dictionary<string, object?>
+            {
+                ["current_wave"] = _waveNum,
+                ["current_round"] = _roundNum,
+                ["hero_id"] = hero.GetHeroData()?.HeroID ?? 0,
+            });
+        }
+        SamplePlayerCount(HumanPlayerCount());
 
         // Auto-arm wave scheduler on first-player join. Idempotent: ArmWaves no-ops
         // if already active or mode-over.
@@ -585,8 +717,31 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         var controller = args.Controller;
         if (controller == null) return;
 
-        _starterGoldSeeded.Remove(controller.Slot);
-        _voteSkipSlots.Remove(controller.Slot);
+        int slot = controller.Slot;
+        _starterGoldSeeded.Remove(slot);
+        _voteSkipSlots.Remove(slot);
+
+        // Stats: emit player_left before removing the controller — PlayerSteamId
+        // needs a live controller, and session_duration_s needs the join
+        // timestamp we stashed in OnClientFullConnect.
+        if (StatsClient.Enabled)
+        {
+            int remaining = HumanPlayerCount(controller.EntityIndex);
+            int sessionDuration = 0;
+            if (_playerJoinTimes.TryGetValue(slot, out var joinTs))
+                sessionDuration = (int)(DateTime.UtcNow - joinTs).TotalSeconds;
+            var hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
+            StatsClient.Capture("ti_player_left", hashed, new Dictionary<string, object?>
+            {
+                ["session_duration_s"] = sessionDuration,
+                ["wave"] = _waveNum,
+                ["round"] = _roundNum,
+                ["was_mid_round"] = _wavesActive,
+                ["players_remaining"] = remaining,
+            });
+            SamplePlayerCount(remaining);
+        }
+        _playerJoinTimes.Remove(slot);
 
         var pawn = controller.GetHeroPawn();
         if (pawn != null)
@@ -599,10 +754,15 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // player to ever arrive starts a completely fresh session.
         if (HumanPlayerCount(controller.EntityIndex) == 0)
         {
+            // Stats: session-outcome emission before the reset. If a victory
+            // or defeat already fired, EmitSessionOutcome is a no-op
+            // (_sessionStartUtc cleared). Otherwise this is an abandoned session.
+            EmitSessionOutcome("abandoned");
             DisarmWaves("last player disconnected");
             _roundNum = 1;
             _modeOver = false;
             _starterGoldSeeded.Clear();
+            ResetSessionStats();
         }
     }
 
