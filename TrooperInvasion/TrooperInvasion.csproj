@@ -34,6 +34,16 @@
     </Reference>
   </ItemGroup>
 
+  <!-- Google.Protobuf is loaded into the host's default ALC and shared with plugins;
+       compile against it but don't ship our own copy. Needed for NetMessages.Send<T>
+       where T : IMessage<T>. -->
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.29.3">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeadlockManagedDir)' != ''">
     <ItemGroup>
       <DeployFiles Include="$(OutputPath)TrooperInvasion.dll;$(OutputPath)TrooperInvasion.pdb" />
