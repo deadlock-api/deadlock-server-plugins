@@ -47,7 +47,7 @@ for normal play.
   `HumanPlayerCount(exclude=leaver) == 0`: `DisarmWaves` (spawn off, cull,
   cancel timers, `_waveNum=0`) plus `_roundNum=1`, `_modeOver=false`,
   `_starterGoldSeeded.Clear()`. Event-driven — no polling interval.
-- **Round cycling.** Every `RoundLength = 20` waves triggers
+- **Round cycling.** Every `RoundLength = 10` waves triggers
   `BeginIntermission`: HUD toast "ROUND N CLEARED", burst-tail delay,
   `DisarmWaves`, `_roundNum++`, `_starterGoldSeeded.Clear()`,
   `IntermissionSeconds = 30`s wait, then auto-rearm if players remain.
@@ -72,16 +72,16 @@ Volume = `MaxSquadSize=8 × activeLanes × 1s pulse × burstSeconds`. Both
 first-three-waves onboarding ramp varies by wave number.
 
 - **Active lanes** (see "Lane gating" below): `Clamp(humans/2, 1, 4)`
-- **Burst seconds**: `(MinBurstSeconds=0.75s at 1p → MaxBurstSeconds=6s at 32p linear) × rampFactor`
+- **Burst seconds**: `(MinBurstSeconds=1.0s at 1p → MaxBurstSeconds=8s at 32p linear) × rampFactor`
 - **Ramp factor**: `1→0.35, 2→0.55, 3→0.8, 4+→1.0`
 
 | Humans | Wave 1 ≈ troopers | Wave 4+ ≈ troopers |
 |---|---|---|
-| 1 | 2 (0.26s × 1 lane) | 6 (0.75s × 1 lane) |
-| 4 | 14 (0.44s × 2 lanes) | 40 (1.26s × 2 lanes) |
-| 8 | 21 (0.66s × 4 lanes) | 61 (1.90s × 4 lanes) |
-| 16 | 35 (1.11s × 4 lanes) | 101 (3.17s × 4 lanes) |
-| 32 | 67 (2.10s × 4 lanes) | 192 (6.00s × 4 lanes) |
+| 1 | 3 (0.35s × 1 lane) | 8 (1.00s × 1 lane) |
+| 4 | 9 (0.59s × 2 lanes) | 27 (1.68s × 2 lanes) |
+| 8 | 29 (0.90s × 4 lanes) | 83 (2.58s × 4 lanes) |
+| 16 | 49 (1.54s × 4 lanes) | 140 (4.39s × 4 lanes) |
+| 32 | 90 (2.80s × 4 lanes) | 256 (8.00s × 4 lanes) |
 
 **Why pulses, not squad size:** `citadel_trooper_squad_size` has an
 engine-enforced **hard cap of 8** ("Squad … is too big!!! Replacing last
@@ -149,7 +149,7 @@ signature abilities, 3s spawn invulnerability) are all **removed**.
 |---|---|
 | Starter capital | `StarterGold = 2500`, seeded **once per slot** via `HashSet<int>`. Respawn keeps your earned souls; disconnect clears the slot so reconnect re-seeds |
 | Abilities | All signature abilities at tier-0 on spawn. Players earn AP from trooper kills and spend through the normal upgrade UI |
-| Trooper bounty | `citadel_trooper_gold_reward = 120 + waveNum × 15` (50 % above vanilla, steeper per-wave) |
+| Trooper bounty | `citadel_trooper_gold_reward = 70 + waveNum × 10` (wave 1 ≈ vanilla baseline ~80, gentle per-wave climb; deliberately below the earlier 120+15×N formula to tighten the progression economy) |
 | Spawn protection | **Removed** — no invuln, no `OnTakeDamage` override, no `_invulnerableUntil` tracking. Death has weight |
 | Heal on spawn | Kept — full health on respawn (PvE forgiveness, not a progression cheat) |
 

@@ -32,9 +32,9 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // member" spew when exceeded), so total wave volume comes from pulses × squad.
     // Wave cadence scales linearly with player count: 1p → 20s, 32p → 5s.
     private const int MaxSquadSize = 8;
-    // Burst seconds scale linearly with player count; solo play gets tiny bursts.
-    private const float MinBurstSeconds = 0.75f;
-    private const float MaxBurstSeconds = 6f;
+    // Burst seconds scale linearly with player count; solo play gets small bursts.
+    private const float MinBurstSeconds = 1.0f;
+    private const float MaxBurstSeconds = 8f;
     private const float FirstWaveGraceSeconds = 10f;
     private const float MinPlayers = 1f;
     private const float MaxPlayers = 32f;
@@ -43,7 +43,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // wave counter (and late-join catch-up gold) would grow unbounded over a long
     // session. Player-earned progression (items, AP, accumulated gold) persists
     // across rounds; only the horde counter resets.
-    private const int RoundLength = 20;
+    private const int RoundLength = 10;
     private const float IntermissionSeconds = 30f;
     private int _roundNum = 1;
     private const float SlowWaveIntervalSeconds = 20f;
@@ -287,7 +287,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         }
 
         _waveNum++;
-        int goldReward = 120 + _waveNum * 15;
+        int goldReward = 70 + _waveNum * 10;
         int activeLanes = ComputeActiveLanes(humans);
         float interval = ComputeWaveInterval(humans);
         float burstSeconds = ComputeBurstSeconds(_waveNum, humans);
