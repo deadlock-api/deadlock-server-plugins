@@ -1,6 +1,6 @@
 {
   "normal": ["StatusPoker", "Hostname"],
   "lock-timer": ["StatusPoker", "LockTimer", "Hostname"],
-  "deathmatch": ["StatusPoker", "Deathmatch", "Hostname", "FlexSlotUnlock", "TeamChangeBlock"],
-  "trooper-invasion": ["StatusPoker", "TrooperInvasion", "Hostname", "FlexSlotUnlock", "TeamChangeBlock"]
+  "deathmatch": ["StatusPoker", "Deathmatch", "Hostname", "FlexSlotUnlock", "TeamChangeBlock", "HeroSelect", "HealOnSpawn"],
+  "trooper-invasion": ["StatusPoker", "TrooperInvasion", "Hostname", "FlexSlotUnlock", "TeamChangeBlock", "HeroSelect", "HealOnSpawn"]
 }

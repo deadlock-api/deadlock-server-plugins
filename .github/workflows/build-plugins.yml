@@ -33,6 +33,10 @@ jobs:
               - 'StatusPoker/**'
             TrooperInvasion:
               - 'TrooperInvasion/**'
+            HeroSelect:
+              - 'HeroSelect/**'
+            HealOnSpawn:
+              - 'HealOnSpawn/**'
 
       - name: Compute plugin matrix
         id: compute

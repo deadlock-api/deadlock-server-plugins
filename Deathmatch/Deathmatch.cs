@@ -349,7 +349,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
     {
         MaxUpgradeSignatureAbilities(pawn);
         GrantSpawnProtection(pawn);
-        HealToFull(pawn);
         pawn?.SetCurrency(ECurrencyType.EGold, 999_999);
     }
 
@@ -459,29 +458,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
             _rotationsSinceRebalance = 0;
             TryRebalanceTeams();
         }
-    }
-
-    private void HealToFull(CCitadelPlayerPawn? pawn)
-    {
-        if (pawn == null) return;
-        // Hero max-HP is computed from stats/modifiers that may not be settled when the
-        // respawn/hero-changed event fires, so retry briefly until GetMaxHealth reports a
-        // non-zero value before writing Health.
-        TryHeal(pawn.EntityIndex, 0);
-    }
-
-    private void TryHeal(int idx, int attempt)
-    {
-        var pawn = CBaseEntity.FromIndex<CCitadelPlayerPawn>(idx);
-        if (pawn == null) return;
-        int max = pawn.GetMaxHealth();
-        if (max > 0)
-        {
-            pawn.Health = max;
-            return;
-        }
-        if (attempt >= 20) return;
-        Timer.Once(1.Ticks(), () => TryHeal(idx, attempt + 1));
     }
 
     private void GrantSpawnProtection(CCitadelPlayerPawn? pawn)
@@ -687,39 +663,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
         return HookResult.Handled;
     }
 
-    [ChatCommand("!hero")]
-    public HookResult OnHeroCommand(ChatCommandContext ctx)
-    {
-        int slot = ctx.Message.SenderSlot;
-        var ctrl = ctx.Controller;
-        if (ctrl == null) return HookResult.Handled;
-
-        if (ctx.Args.Length == 0)
-        {
-            Chat.PrintToChat(slot, "[DM] usage: !hero <name>");
-            return HookResult.Handled;
-        }
-
-        var query = string.Join(' ', ctx.Args).Trim();
-        var matches = FuzzyMatchHero(query);
-        if (matches.Count == 0)
-        {
-            Chat.PrintToChat(slot, $"[DM] No hero matches '{query}'.");
-            return HookResult.Handled;
-        }
-        if (matches.Count > 1)
-        {
-            var names = string.Join(", ", matches.Take(6).Select(h => h.ToDisplayName()));
-            Chat.PrintToChat(slot, $"[DM] '{query}' is ambiguous: {names}");
-            return HookResult.Handled;
-        }
-
-        var hero = matches[0];
-        ctrl.SelectHero(hero);
-        Chat.PrintToChat(slot, $"[DM] Swapping to {hero.ToDisplayName()}.");
-        return HookResult.Handled;
-    }
-
     [ChatCommand("!stuck")]
     [ChatCommand("!suicide")]
     public HookResult OnStuckCommand(ChatCommandContext ctx)
@@ -743,38 +686,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
         }
         pawn.Hurt(999_999f);
         return HookResult.Handled;
-    }
-
-    private static List<Heroes> FuzzyMatchHero(string query)
-    {
-        var needle = query.Trim().ToLowerInvariant();
-        var available = Enum.GetValues<Heroes>()
-            .Where(h => h.GetHeroData()?.AvailableInGame == true)
-            .ToArray();
-
-        static string StripPrefix(string s) => s.StartsWith("hero_") ? s[5..] : s;
-
-        var candidates = available
-            .Select(h => (
-                hero: h,
-                display: h.ToDisplayName().ToLowerInvariant(),
-                enumN: h.ToString().ToLowerInvariant(),
-                internalN: StripPrefix(h.ToHeroName()).ToLowerInvariant()))
-            .ToArray();
-
-        bool Any(Func<(Heroes hero, string display, string enumN, string internalN), bool> pred, out List<Heroes> hits)
-        {
-            hits = candidates.Where(pred).Select(c => c.hero).Distinct().ToList();
-            return hits.Count > 0;
-        }
-
-        if (Any(c => c.display == needle || c.enumN == needle || c.internalN == needle, out var exact))
-            return exact;
-        if (Any(c => c.display.StartsWith(needle) || c.enumN.StartsWith(needle) || c.internalN.StartsWith(needle), out var prefix))
-            return prefix;
-        if (Any(c => c.display.Contains(needle) || c.enumN.Contains(needle) || c.internalN.Contains(needle), out var contains))
-            return contains;
-        return new List<Heroes>();
     }
 
     private static void EnsureRankQueued(uint accountId)

@@ -430,7 +430,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // Guard every step — pawn can be mid-initialization when these events fire.
         // Empty model in server log ("for entity \"player\"") suggests hero assets
         // aren't fully settled yet, so we wrap each side effect.
-        try { HealToFull(pawn); } catch (Exception ex) { Console.WriteLine($"[TI] HealToFull: {ex.Message}"); }
+        // Healing is handled by the HealOnSpawn plugin.
         try { SeedStarterGold(pawn); } catch (Exception ex) { Console.WriteLine($"[TI] SeedStarterGold: {ex.Message}"); }
     }
 
@@ -473,22 +473,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     {
         DeferredSpawnRitual(args.Userid?.As<CCitadelPlayerPawn>());
         return HookResult.Continue;
-    }
-
-    private void HealToFull(CCitadelPlayerPawn? pawn)
-    {
-        if (pawn == null) return;
-        TryHeal(pawn.EntityIndex, 0);
-    }
-
-    private void TryHeal(int idx, int attempt)
-    {
-        var pawn = CBaseEntity.FromIndex<CCitadelPlayerPawn>(idx);
-        if (pawn == null) return;
-        int max = pawn.GetMaxHealth();
-        if (max > 0) { pawn.Health = max; return; }
-        if (attempt >= 20) return;
-        Timer.Once(1.Ticks(), () => TryHeal(idx, attempt + 1));
     }
 
     private static readonly string[] _helpLines = {
@@ -540,28 +524,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _wavesActive = wasActive;
     }
 
-    [Command("hero", Description = "Swap hero by fuzzy name")]
-    public void CmdHero(CCitadelPlayerController caller, params string[] nameParts)
-    {
-        int slot = caller.Slot;
-        if (nameParts.Length == 0)
-            throw new CommandException("[TI] usage: !hero <name>");
-
-        var query = string.Join(' ', nameParts).Trim();
-        var matches = FuzzyMatchHero(query);
-        if (matches.Count == 0)
-            throw new CommandException($"[TI] No hero matches '{query}'.");
-        if (matches.Count > 1)
-        {
-            var names = string.Join(", ", matches.Take(6).Select(h => h.ToDisplayName()));
-            throw new CommandException($"[TI] '{query}' is ambiguous: {names}");
-        }
-
-        var hero = matches[0];
-        caller.SelectHero(hero);
-        Chat.PrintToChat(slot, $"[TI] Swapping to {hero.ToDisplayName()}.");
-    }
-
     [Command("stuck", Description = "Kill yourself to respawn")]
     [Command("suicide", Description = "Kill yourself to respawn")]
     public void CmdStuck(CCitadelPlayerController caller)
@@ -570,38 +532,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         if (pawn == null || !pawn.IsAlive)
             throw new CommandException("[TI] Not alive.");
         pawn.Hurt(999_999f);
-    }
-
-    private static List<Heroes> FuzzyMatchHero(string query)
-    {
-        var needle = query.Trim().ToLowerInvariant();
-        var available = Enum.GetValues<Heroes>()
-            .Where(h => h.GetHeroData()?.AvailableInGame == true)
-            .ToArray();
-
-        static string StripPrefix(string s) => s.StartsWith("hero_") ? s[5..] : s;
-
-        var candidates = available
-            .Select(h => (
-                hero: h,
-                display: h.ToDisplayName().ToLowerInvariant(),
-                enumN: h.ToString().ToLowerInvariant(),
-                internalN: StripPrefix(h.ToHeroName()).ToLowerInvariant()))
-            .ToArray();
-
-        bool Any(Func<(Heroes hero, string display, string enumN, string internalN), bool> pred, out List<Heroes> hits)
-        {
-            hits = candidates.Where(pred).Select(c => c.hero).Distinct().ToList();
-            return hits.Count > 0;
-        }
-
-        if (Any(c => c.display == needle || c.enumN == needle || c.internalN == needle, out var exact))
-            return exact;
-        if (Any(c => c.display.StartsWith(needle) || c.enumN.StartsWith(needle) || c.internalN.StartsWith(needle), out var prefix))
-            return prefix;
-        if (Any(c => c.display.Contains(needle) || c.enumN.Contains(needle) || c.internalN.Contains(needle), out var contains))
-            return contains;
-        return new List<Heroes>();
     }
 
     public override void OnClientDisconnect(ClientDisconnectedEvent args)

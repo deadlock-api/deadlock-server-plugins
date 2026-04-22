@@ -47,6 +47,10 @@ jobs:
               - 'StatusPoker/**'
             TrooperInvasion:
               - 'TrooperInvasion/**'
+            HeroSelect:
+              - 'HeroSelect/**'
+            HealOnSpawn:
+              - 'HealOnSpawn/**'
 
       - name: Compute gamemode matrix
         id: compute
