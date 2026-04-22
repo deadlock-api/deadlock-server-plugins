@@ -60,6 +60,11 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // the new session, producing back-to-back waves or premature spawn cutoff.
     private IHandle? _pendingWaveTimer;
     private IHandle? _pendingBurstEnd;
+    // Vote-skip ledger: controller Slots that voted to end the current round
+    // early. Cleared on round boundaries (DisarmWaves) so each round gets a
+    // fresh ballot.
+    private const int VoteSkipPercent = 30;
+    private readonly HashSet<int> _voteSkipSlots = new();
     // Auto-armed on first player join, auto-disarmed on last disconnect. The
     // !startwaves / !stopwaves commands still work as manual overrides.
     private bool _wavesActive;
@@ -113,6 +118,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
         _aliveEnemyTroopers.Clear();
         _starterGoldSeeded.Clear();
+        _voteSkipSlots.Clear();
 
         // Match-clock and GameState left to the engine — the HUD clock runs natively.
         // UnlockFlexSlots scheduled per-player-join in OnClientFullConnect, not at
@@ -169,6 +175,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // Reset wave counter so the next session (new player joining later) starts
         // from a fresh onboarding ramp at wave 1, not mid-progression at wave N.
         _waveNum = 0;
+        _voteSkipSlots.Clear();
         Console.WriteLine($"[TI] Wave scheduler paused ({reason}). Troopers culled, wave counter reset.");
     }
 
@@ -483,6 +490,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         "[TI] !startwaves — arm wave engine + begin scheduler",
         "[TI] !stopwaves — halt scheduler (and close spawn window)",
         "[TI] !nextwave — trigger one wave immediately (dev)",
+        "[TI] !voteskip — vote to end the current round (>30% of players required)",
     };
 
     [Command("help", Description = "Show available TrooperInvasion commands")]
@@ -524,6 +532,37 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _wavesActive = wasActive;
     }
 
+    [Command("voteskip", Description = "Vote to end the current round early (>30% of players)")]
+    public void CmdVoteSkip(CCitadelPlayerController caller)
+    {
+        if (_modeOver) throw new CommandException("[TI] Mode is over.");
+        if (!_wavesActive) throw new CommandException("[TI] No active round to skip.");
+
+        bool isFirst = _voteSkipSlots.Count == 0;
+        if (!_voteSkipSlots.Add(caller.Slot))
+            throw new CommandException("[TI] You already voted to skip this round.");
+
+        int humans = HumanPlayerCount();
+        int votes = _voteSkipSlots.Count;
+        string who = caller.PlayerName ?? "A player";
+
+        if (isFirst)
+            Chat.PrintToChatAll($"[TI] {who} wants to skip round {_roundNum} — type !voteskip to agree (>{VoteSkipPercent}% needed)");
+
+        int percent = humans > 0 ? votes * 100 / humans : 0;
+        Chat.PrintToChatAll($"[TI] Vote skip: {votes}/{humans} ({percent}%)");
+
+        // Strict > 30% — 1/3 passes, 1/4 doesn't.
+        if (votes * 100 > humans * VoteSkipPercent)
+        {
+            Chat.PrintToChatAll($"[TI] Vote skip passed — ending round {_roundNum}");
+            // Clear immediately so BeginIntermission's DisarmWaves doesn't
+            // re-process an already-tallied ballot after the round boundary.
+            _voteSkipSlots.Clear();
+            BeginIntermission(0f);
+        }
+    }
+
     [Command("stuck", Description = "Kill yourself to respawn")]
     [Command("suicide", Description = "Kill yourself to respawn")]
     public void CmdStuck(CCitadelPlayerController caller)
@@ -540,6 +579,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         if (controller == null) return;
 
         _starterGoldSeeded.Remove(controller.Slot);
+        _voteSkipSlots.Remove(controller.Slot);
 
         var pawn = controller.GetHeroPawn();
         if (pawn != null)
