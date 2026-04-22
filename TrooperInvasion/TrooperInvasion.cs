@@ -1,4 +1,3 @@
-using System.Numerics;
 using DeadworksManaged.Api;
 
 namespace TrooperInvasion;
@@ -26,13 +25,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // Seeded once per player slot — persists across respawns so death costs you
     // the gold you had earned. Cleared on disconnect so a reconnect gets a fresh seed.
     private readonly HashSet<int> _starterGoldSeeded = new();
-
-    private const string CmdChangeTeam = "changeteam";
-    private const string CmdJoinTeam = "jointeam";
-
-    private static readonly SchemaAccessor<bool> _flexSlotsForcedUnlocked = new("CCitadelGameRules"u8, "m_bFlexSlotsForcedUnlocked"u8);
-    private static readonly SchemaAccessor<short> _nFlexSlotsUnlocked = new("CCitadelTeam"u8, "m_nFlexSlotsUnlocked"u8);
-    private const short AllFlexSlotUnlockBits = 0xF;
 
     // Wave pacing — ConVar-driven. Each wave enables trooper spawn for a burst
     // window, then disables it, so the engine fires spawn pulses for that window.
@@ -327,31 +319,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             ScheduleNextWave();
     }
 
-private static void UnlockFlexSlots()
-    {
-        // Schema-based — same pattern as Deathmatch, known stable. The sv_cheats-toggle
-        // concommand alternative coincided with startup crashes, so reverting.
-        try
-        {
-            if (GameRules.IsValid)
-            {
-                var ptr = GameRules.Pointer;
-                if (!_flexSlotsForcedUnlocked.Get(ptr))
-                    _flexSlotsForcedUnlocked.Set(ptr, true);
-            }
-            foreach (var ent in Entities.All)
-            {
-                if (ent.Classname != "CCitadelTeam") continue;
-                if (_nFlexSlotsUnlocked.Get(ent.Handle) != AllFlexSlotUnlockBits)
-                    _nFlexSlotsUnlocked.Set(ent.Handle, AllFlexSlotUnlockBits);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[TI] UnlockFlexSlots: {ex.Message}");
-        }
-    }
-
     public override void OnEntitySpawned(EntitySpawnedEvent args)
     {
         // Trooper spawn handler:
@@ -450,26 +417,12 @@ private static void UnlockFlexSlots()
         var leastPresent = available.Where(x => x.count == min).Select(x => x.hero).ToArray();
         var hero = leastPresent[Random.Shared.Next(leastPresent.Length)];
         controller.SelectHero(hero);
-        // UnlockFlexSlots intentionally NOT called synchronously here — startup
-        // Timer.Once(1.Seconds()) in OnStartupServer already handles it globally.
 
         Console.WriteLine($"[TI] Slot {args.Slot} -> team {HumanTeam}, hero {hero.ToHeroName()}");
-
-        Timer.Once(1.Seconds(), UnlockFlexSlots).CancelOnMapChange();
 
         // Auto-arm wave scheduler on first-player join. Idempotent: ArmWaves no-ops
         // if already active or mode-over.
         ArmWaves();
-    }
-
-    public override HookResult OnClientConCommand(ClientConCommandEvent e)
-    {
-        // Block team swaps only. `selecthero` and `citadel_hero_pick` pass through
-        // so the normal in-game hero-pick UI works — every player can re-pick at
-        // will. `!hero <name>` remains as a fuzzy-name alternative.
-        if (e.Command == CmdChangeTeam || e.Command == CmdJoinTeam)
-            return HookResult.Stop;
-        return HookResult.Continue;
     }
 
     private void ApplySpawnRitual(CCitadelPlayerPawn? pawn)
@@ -479,8 +432,6 @@ private static void UnlockFlexSlots()
         // aren't fully settled yet, so we wrap each side effect.
         try { HealToFull(pawn); } catch (Exception ex) { Console.WriteLine($"[TI] HealToFull: {ex.Message}"); }
         try { SeedStarterGold(pawn); } catch (Exception ex) { Console.WriteLine($"[TI] SeedStarterGold: {ex.Message}"); }
-        // UnlockFlexSlots intentionally NOT called here — sv_cheats toggle mid-event
-        // appears to be a crash trigger. Startup Timer.Once handles it once and for all.
     }
 
     private void SeedStarterGold(CCitadelPlayerPawn? pawn)

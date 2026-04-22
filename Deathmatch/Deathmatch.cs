@@ -32,8 +32,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
     // checked on selecthero/citadel_hero_pick to allow a brief post-death swap.
     private readonly Dictionary<int, float> _heroSwapUntil = new();
 
-    private const string CmdChangeTeam = "changeteam";
-    private const string CmdJoinTeam = "jointeam";
     private const string CmdSelectHero = "selecthero";
     private const string CmdCitadelHeroPick = "citadel_hero_pick";
 
@@ -110,7 +108,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
         Timer.Every(1.Ticks(), ScaleAbilityCooldowns);
         Timer.Every(1.Ticks(), TickMatchClock);
-        Timer.Once(1.Seconds(), UnlockFlexSlots);
     }
 
     private void TickMatchClock()
@@ -148,13 +145,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
         // force it back so the "team X won" screen can't stick.
         if ((EGameState)_eGameState.Get(ptr) != EGameState.GameInProgress)
             _eGameState.Set(ptr, (uint)EGameState.GameInProgress);
-    }
-
-    private static void UnlockFlexSlots()
-    {
-        Server.ExecuteCommand("sv_cheats 1");
-        Server.ExecuteCommand("citadel_unlock_flex_slots");
-        Server.ExecuteCommand("sv_cheats 0");
     }
 
     [GameEventHandler("gameover_msg")]
@@ -322,7 +312,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
         var hero = leastPresent[Random.Shared.Next(leastPresent.Length)];
         controller.SelectHero(hero);
-        UnlockFlexSlots();
         Console.WriteLine($"[DM] Slot {args.Slot} -> team {assignedTeam} " +
             $"(counts: {string.Join(",", teamCounts.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value}"))}; " +
             $"ranks: {string.Join(",", teamRanks.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value:F0}"))}), " +
@@ -344,8 +333,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
     public override HookResult OnClientConCommand(ClientConCommandEvent e)
     {
-        if (e.Command == CmdChangeTeam || e.Command == CmdJoinTeam)
-            return HookResult.Stop;
         if (e.Command == CmdSelectHero || e.Command == CmdCitadelHeroPick)
         {
             var ctrl = e.Controller;
@@ -364,7 +351,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
         GrantSpawnProtection(pawn);
         HealToFull(pawn);
         pawn?.SetCurrency(ECurrencyType.EGold, 999_999);
-        UnlockFlexSlots();
     }
 
     [GameEventHandler("player_hero_changed")]

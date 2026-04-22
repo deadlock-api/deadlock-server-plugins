@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlexSlotUnlock</RootNamespace>
+    <AssemblyName>FlexSlotUnlock</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <!-- Standalone CI / prebuilt deadworks: -p:DeadlockDir=... points at an unpacked release. -->
+  <ItemGroup Condition="'$(DeadlockDir)' != ''">
+    <Reference Include="DeadworksManaged.Api">
+      <HintPath>$(DeadlockDir)\game\bin\win64\managed\DeadworksManaged.Api.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Local dev: sibling deadworks repo. -->
+  <ItemGroup Condition="'$(DeadlockDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+    <ProjectReference Include="..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- Docker build (deadworks extra-plugins): AssemblySearchPaths includes /artifacts/managed. -->
+  <ItemGroup Condition="'$(DeadlockDir)' == '' and !Exists('$(MSBuildThisFileDirectory)..\..\deadworks\managed\DeadworksManaged.Api\DeadworksManaged.Api.csproj')">
+    <Reference Include="DeadworksManaged.Api">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeadlockManagedDir)' != ''">
+    <ItemGroup>
+      <DeployFiles Include="$(OutputPath)FlexSlotUnlock.dll;$(OutputPath)FlexSlotUnlock.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(DeadlockManagedDir)\plugins" SkipUnchangedFiles="false" Retries="0" ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>
