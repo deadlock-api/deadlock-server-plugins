@@ -2,6 +2,7 @@
 title: Deadworks runtime
 type: concept
 sources:
+  - knowledge-base/raw/articles/deadworks-0.4.5-release.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-0656dd61.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-1bb13986.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-1dba11a1.md
@@ -35,7 +36,7 @@ related:
   - "[[protobuf-pipeline]]"
   - "[[plugin-build-pipeline]]"
 created: 2026-04-21
-updated: 2026-04-21
+updated: 2026-04-22
 confidence: high
 ---
 
@@ -76,8 +77,11 @@ deadworks-bc59e6cf.
   (deadworks-ddfface7, `docker/entrypoint.sh:150-160`).
 - Self-hosted model: `deadworks.exe` is run from `<Deadlock>/game/bin/win64/`
   as its CWD. Players connect via in-game console `connect localhost:27067`
-  by default — port is 27067 in the bare local-dev flow but 27015 in
-  the Docker flow (inconsistency in README noted at deadworks-328372c6).
+  by default. As of **v0.4.5** the deadworks default port is back to
+  `27067` (reverted to avoid conflicts with the game client); the Docker
+  flow in this repo still sets its own `SERVER_PORT` (historically `27015`).
+  Earlier log flagged this as a documentation inconsistency; v0.4.5
+  resolves it on deadworks's side.
 - Loads engine `engine2.dll` via `LoadLibrary`, calls exported
   `Source2Main(hInst, hPrev, cmdLine, nShowCmd, baseDir="", game="citadel")`.
 - Preloads `../../citadel/bin/win64/server.dll` relative to the exe before
@@ -188,10 +192,22 @@ Key abstractions:
     classes must exist even if empty (required by the host contract;
     deathmatch-5233473a).
   - `[GameEventHandler("event_name")]` — event listener method
-  - `[ChatCommand("!mycommand")]` — chat command handler. Convention is
-    that the string **includes** the `!` prefix (server-plugins-65d13a2e).
-    LockTimer inconsistently registers bare names — likely latent bug.
-  - `[NetMessage]`, `[ConCommand]`, event IO attributes.
+  - **`[Command("name")]`** (new in v0.4.5; **preferred**). Single
+    attribute registers three surface forms at once: `dw_<name>` console
+    concommand, `/<name>` chat slash command, `!<name>` chat bang command.
+    Handler signature: `(CCitadelPlayerController caller, <typed args>)`
+    returning `void` — the host parses `ctx.Args[i]` into the declared
+    parameter type, so plugins no longer need to `int.TryParse` manually.
+  - `[ChatCommand("!mycommand")]` — **deprecated in v0.4.5, will be
+    removed.** Chat command handler with manual arg parsing via
+    `ChatCommandContext`. Convention was that the string **includes** the
+    `!` prefix (server-plugins-65d13a2e). LockTimer inconsistently
+    registers bare names — the inconsistency disappears on migration to
+    `[Command]`, which handles both `/` and `!` prefixes automatically.
+  - `[ConCommand]` — **deprecated in v0.4.5, will be removed.** Superseded
+    by `[Command]`, which registers a `dw_`-prefixed concommand alongside
+    the chat forms.
+  - `[NetMessage]`, event IO attributes.
   - Scanned by `PluginLoader` reflectively on plugin load.
 - **Core types / helpers** (see individual sources):
   - `SchemaAccessor<T>` with UTF-8 byte-literal class/field pairs:
@@ -356,6 +372,31 @@ Cluster of commits migrating entity wrappers from raw pointers to handles
 
 Launcher versioned independently from the plugin host; bumped to `0.2.10`
 in `a71ac83`.
+
+## v0.4.5 (2026-04-22)
+
+Release notes: [[deadworks-0.4.5-release]]. Summary of the managed API
+surface changes:
+
+- `CCitadelPlayerPawn.AddItem` gains a `bool enhanced = false` overload
+  parameter. `caller.AddItem(itemId, enhanced: true)` grants the enhanced
+  variant.
+- `CCitadelPlayerPawn.HeroID` exposed (previously internal). Plugins can
+  now read a pawn's hero without going through schema accessors.
+- **`CBasePlayerController.Slot`** added — canonical replacement for the
+  `controller.EntityIndex - 1` idiom. `Chat.PrintToChat` and similar
+  helpers use this mapping; plugins should prefer `controller.Slot` going
+  forward.
+- `CBasePlayerController.PrintToConsole` — was broken in earlier
+  releases, now fixed. Plugins that suppressed usage because it silently
+  did nothing can re-enable it.
+- New API for **sending soundevents directly to players** (scoped to a
+  single player rather than the default broadcast path).
+- **`[Command]` attribute** supersedes `[ChatCommand]` and `[ConCommand]`.
+  See the attribute list above for semantics.
+
+Default listen port reverted to `27067` in the same release — see the
+port note in the "replacement entry point" section above.
 
 ## Host / fork split
 

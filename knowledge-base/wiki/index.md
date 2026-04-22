@@ -2,7 +2,7 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-04-21
+updated: 2026-04-22
 ---
 
 # Content Catalog
@@ -59,6 +59,8 @@ what to load — keep it concise and current.
 
 - [[session-extracts-2026-04-21]] — bulk ingest of ~61 session transcript
   extracts across four sibling project dirs
+- [[deadworks-0.4.5-release]] — v0.4.5 release notes: `[Command]` attribute,
+  port revert to 27067, `Slot`/`HeroID`/`AddItem(enhanced)` additions
 
 ## Comparisons
 
@@ -66,6 +68,6 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 16 (index, log, overview, glossary, 1 source,
+**Total wiki pages:** 17 (index, log, overview, glossary, 2 source,
 3 plugin, 4 concept, 4 entity, 2 operation)
-**Last ingest:** 2026-04-21 — session-extracts bulk ingest
+**Last ingest:** 2026-04-22 — deadworks v0.4.5 release notes

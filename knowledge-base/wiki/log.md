@@ -8,6 +8,52 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-22] — ingest deadworks v0.4.5 release notes
+
+- **Operation:** ingest
+- **Source:** [[deadworks-0.4.5-release]] — user-provided summary of the
+  upcoming v0.4.5 release at
+  `https://github.com/Deadworks-net/deadworks/releases`, captured at
+  `raw/articles/deadworks-0.4.5-release.md`.
+- **Pages created:** `sources/deadworks-0.4.5-release.md`.
+- **Pages updated:** `concepts/deadworks-runtime.md` (new v0.4.5 section;
+  attribute list rewritten for `[Command]` + deprecations; port note
+  updated), `glossary.md` (added `[Command]` and `Slot` entries),
+  `index.md` (added source, bumped counts).
+- **Key findings:**
+  - **New `[Command]` attribute** is the unified command API. Single
+    `[Command("heal")]` registers `dw_heal` console concommand + `/heal`
+    chat slash + `!heal` chat bang, all at once. Handler signature drops
+    `ChatCommandContext`/`HookResult` — just
+    `(CCitadelPlayerController caller, <typed args>)` returning `void`,
+    with host-side arg parsing.
+  - **`[ChatCommand]` and `[ConCommand]` are deprecated** and will be
+    removed. All three plugins in this repo currently use
+    `[ChatCommand]` and will need migration before removal.
+  - **`CBasePlayerController.Slot`** is now the canonical way to get a
+    player slot, replacing the widely-used `controller.EntityIndex - 1`
+    idiom (including the mapping inside `Chat.PrintToChat`).
+  - **`CCitadelPlayerPawn.AddItem`** gains `bool enhanced = false` to
+    grant enhanced items; `HeroID` now exposed directly on the pawn.
+  - **`CBasePlayerController.PrintToConsole`** was broken prior to v0.4.5
+    and is now fixed. Any plugin that avoided it because it silently did
+    nothing can now re-adopt it.
+  - **Soundevents can now be sent directly to a single player** via a
+    new API (scoped, not the default broadcast path).
+  - **Default port reverted to `27067`** to avoid conflicts with the game
+    client — partially resolves the 27067 vs 27015 inconsistency noted in
+    the previous log entry (deadworks-side aligned; the Docker compose
+    flow in this repo is unaffected because it sets `SERVER_PORT`
+    explicitly).
+- **Cross-cutting implications flagged:**
+  - LockTimer's bare-name `[ChatCommand("zones")]` inconsistency with the
+    `!`-prefix convention becomes moot on migration to `[Command]` (which
+    registers both `/` and `!` automatically). Revisit at migration time.
+  - All three plugins need a `[ChatCommand]` → `[Command]` migration
+    pass before the old attribute is removed upstream.
+- **Surprises:** none beyond the content above.
+- **Contradictions flagged:** none.
+
 ## [2026-04-21] — bulk ingest of session extracts
 
 - **Operation:** bulk-ingest

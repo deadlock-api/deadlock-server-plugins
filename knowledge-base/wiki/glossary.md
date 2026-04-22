@@ -2,7 +2,7 @@
 title: Glossary
 type: reference
 created: 2026-04-21
-updated: 2026-04-21
+updated: 2026-04-22
 ---
 
 # Glossary
@@ -42,6 +42,15 @@ Deadlock. `+0x00 m_pInstance`, `+0x20 m_designerName*`. See [[source-2-engine]].
 ### citadel
 Deadlock's internal mod directory name. Launch flag is `-game citadel`.
 `server.dll` lives under `game/citadel/bin/win64/`.
+
+### `[Command]`
+Unified command attribute introduced in deadworks **v0.4.5**. A single
+`[Command("heal")]` registers three surface forms: `dw_heal` console
+concommand, `/heal` chat slash command, `!heal` chat bang command. Handler
+signature is `(CCitadelPlayerController caller, <typed args>)` returning
+`void` — the host parses chat args into the declared parameter types.
+**Deprecates** `[ChatCommand]` and `[ConCommand]`; both will be removed.
+See [[deadworks-runtime]], [[deadworks-0.4.5-release]].
 
 ### clang-cl
 LLVM's MSVC-compatible compiler driver. Used via `--driver-mode=cl` wrapper
@@ -162,6 +171,11 @@ point. Deadworks calls it after installing hooks. See [[source-2-engine]].
 Windows Steam client DLL. Must be copied from the Steamworks SDK Redist
 (app 1007) into **three locations** for Wine to find it. See
 [[proton-runtime]].
+
+### Slot
+Player slot index. As of deadworks **v0.4.5** exposed on the managed API
+as `CBasePlayerController.Slot` — canonical replacement for the older
+`controller.EntityIndex - 1` idiom. See [[deadworks-runtime]].
 
 ### SteamID64
 Player identifier, at `CBasePlayerController + 0x708` (u64,
