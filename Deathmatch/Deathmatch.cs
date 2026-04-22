@@ -345,9 +345,36 @@ public class DeathmatchPlugin : DeadworksPluginBase
                 && _heroSwapUntil.TryGetValue(ctrl.EntityIndex, out var until)
                 && GlobalVars.CurTime < until)
                 return HookResult.Continue;
+
+            // In-game hero picker while alive: queue the swap (same as `!hero`) so the
+            // player gets confirmation and the swap lands on their next respawn, instead
+            // of silently dropping the command.
+            if (ctrl != null && TryResolveHeroFromCommandArgs(e.Args) is Heroes hero)
+            {
+                _pendingHeroSwap[ctrl.EntityIndex] = hero;
+                Chat.PrintToChat(ctrl.Slot, $"[DM] Queued swap to {hero.ToDisplayName()} — applies on next respawn.");
+            }
             return HookResult.Stop;
         }
         return HookResult.Continue;
+    }
+
+    private static Heroes? TryResolveHeroFromCommandArgs(string[] args)
+    {
+        foreach (var a in args)
+        {
+            if (string.IsNullOrWhiteSpace(a)) continue;
+            // `selecthero hero_atlas` — internal name, with or without the `hero_` prefix.
+            if (HeroTypeExtensions.TryParse(a, out var byName)) return byName;
+            if (HeroTypeExtensions.TryParse("hero_" + a, out var byShort)) return byShort;
+            // `citadel_hero_pick <HeroID>` — numeric id; look up the matching Heroes enum.
+            if (int.TryParse(a, out var id) && id > 0)
+            {
+                foreach (var h in Enum.GetValues<Heroes>())
+                    if (h.GetHeroData()?.HeroID == id) return h;
+            }
+        }
+        return null;
     }
 
     private void ApplySpawnRitual(CCitadelPlayerPawn? pawn)
