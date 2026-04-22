@@ -4,9 +4,14 @@ type: overview
 sources:
   - ../docker-compose.yml
   - ../gamemodes.json
-related: []
+related:
+  - "[[deadworks-runtime]]"
+  - "[[plugin-api-surface]]"
+  - "[[examples-index]]"
+  - "[[docker-build]]"
+  - "[[plugin-build-pipeline]]"
 created: 2026-04-21
-updated: 2026-04-21
+updated: 2026-04-22
 confidence: medium
 ---
 

@@ -19,6 +19,11 @@ related:
   - "[[source-2-engine]]"
   - "[[deadworks-runtime]]"
   - "[[plugin-build-pipeline]]"
+  - "[[command-attribute]]"
+  - "[[events-surface]]"
+  - "[[schema-accessors]]"
+  - "[[netmessages-api]]"
+  - "[[examples-index]]"
 created: 2026-04-21
 updated: 2026-04-21
 confidence: high

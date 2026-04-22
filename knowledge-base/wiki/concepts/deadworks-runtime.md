@@ -3,6 +3,10 @@ title: Deadworks runtime
 type: concept
 sources:
   - knowledge-base/raw/articles/deadworks-0.4.5-release.md
+  - knowledge-base/raw/notes/2026-04-22-deadworks-command-attribute.md
+  - knowledge-base/raw/notes/2026-04-22-deadworks-events-surface.md
+  - knowledge-base/raw/notes/2026-04-22-deadworks-plugin-api-surface.md
+  - knowledge-base/raw/notes/2026-04-22-deadworks-native-layout.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-0656dd61.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-1bb13986.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-1dba11a1.md
@@ -35,6 +39,15 @@ related:
   - "[[deadworks-mem-jsonc]]"
   - "[[protobuf-pipeline]]"
   - "[[plugin-build-pipeline]]"
+  - "[[plugin-api-surface]]"
+  - "[[command-attribute]]"
+  - "[[timer-api]]"
+  - "[[events-surface]]"
+  - "[[schema-accessors]]"
+  - "[[netmessages-api]]"
+  - "[[plugin-config]]"
+  - "[[gameevent-source-generator]]"
+  - "[[examples-index]]"
 created: 2026-04-21
 updated: 2026-04-22
 confidence: high
@@ -170,6 +183,12 @@ Managed layer layout (`managed/` directory alongside `deadworks.exe`):
 Target framework: **`net10.0`** (deadworks-5d3198bf). Nullable enabled,
 AllowUnsafeBlocks, docs generated.
 
+> **For the full API surface catalogue**, see [[plugin-api-surface]].
+> Dedicated deep-dives: [[command-attribute]], [[timer-api]],
+> [[events-surface]], [[schema-accessors]], [[netmessages-api]],
+> [[plugin-config]], [[gameevent-source-generator]]. For idiom
+> examples, see [[examples-index]].
+
 Key abstractions:
 
 - **`IDeadworksPlugin`** — ~18 lifecycle/hook methods: `OnLoad`,
@@ -200,10 +219,14 @@ Key abstractions:
     parameter type, so plugins no longer need to `int.TryParse` manually.
   - `[ChatCommand("!mycommand")]` — **deprecated in v0.4.5, will be
     removed.** Chat command handler with manual arg parsing via
-    `ChatCommandContext`. Convention was that the string **includes** the
-    `!` prefix (server-plugins-65d13a2e). LockTimer inconsistently
-    registers bare names — the inconsistency disappears on migration to
-    `[Command]`, which handles both `/` and `!` prefixes automatically.
+    `ChatCommandContext`. Dispatcher strips both `/` and `!` prefixes
+    before registry lookup (`PluginLoader.ChatCommands.cs:14-47`), so:
+    - `[ChatCommand("foo")]` handles BOTH `/foo` and `!foo` (bare name)
+    - `[ChatCommand("!foo")]` handles ONLY `!foo` (bang-only)
+
+    The LockTimer bare-name registration (`[ChatCommand("zones")]` etc.)
+    is thus **correct, not a latent bug** as previously flagged in the
+    log — it just exposes both surfaces. See [[command-attribute]].
   - `[ConCommand]` — **deprecated in v0.4.5, will be removed.** Superseded
     by `[Command]`, which registers a `dw_`-prefixed concommand alongside
     the chat forms.

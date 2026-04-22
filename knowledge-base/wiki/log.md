@@ -8,6 +8,119 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-22] — ingest deadworks API surface & examples scan
+
+- **Operation:** ingest (bulk)
+- **Source:** [[deadworks-scan-2026-04-22]] — deep scan of the sibling
+  `../deadworks/` repo, captured as 10 raw notes under
+  `raw/notes/2026-04-22-deadworks-*.md`. Covered areas not previously
+  on the wiki: plugin-facing API surface (`DeadworksManaged.Api/`),
+  host-side dispatcher partials, source generator, 11 example plugins,
+  and native C++ tree layout.
+- **Pages created (10):**
+  - `sources/deadworks-scan-2026-04-22.md`
+  - `concepts/plugin-api-surface.md`
+  - `entities/command-attribute.md`
+  - `entities/timer-api.md`
+  - `entities/events-surface.md`
+  - `entities/schema-accessors.md`
+  - `entities/netmessages-api.md`
+  - `entities/plugin-config.md`
+  - `entities/gameevent-source-generator.md`
+  - `plugins/examples-index.md`
+- **Pages updated:**
+  - `concepts/deadworks-runtime.md` — added `related:` cross-links to new
+    API pages; reconciled the `[ChatCommand]` bare-name convention (the
+    dispatcher strips both `/` and `!` prefixes before lookup, so
+    `[ChatCommand("zones")]` handles both surfaces — NOT a latent bug);
+    added pointer block near the API section.
+  - `operations/docker-build.md` — added the native-layout note as a
+    source (content already covered the build-native.sh gotcha and the
+    clang-cl C++23 flag quirk).
+  - `index.md` — added all new pages; bumped counts (27 total).
+- **Key findings (deep-scan specifics):**
+  - **`[Command]` attribute machinery.** `CommandBinder` reflectively
+    builds a Plan of 4 slot kinds (Caller/RawArgs/Typed/Params).
+    Caller nullability annotation matters:
+    `CCitadelPlayerController?` accepts null caller (server console);
+    non-nullable with null caller → silent skip. `CommandConverters`
+    lets plugins register custom type parsers from `OnLoad`.
+    `CommandTokenizer` honours `\"` and `\\` escapes inside double
+    quotes.
+  - **Timer Sequence semantics.** `IStep.Run` starts at 1 (not 0).
+    `Pace` is abstract with internal `WaitPace`/`DonePace` — plugins
+    return `step.Wait(...)` / `step.Done()`. `IHandle.CancelOnMapChange()`
+    hooks `OnStartupServer`. **Framework auto-cancels plugin timers on
+    unload** — `OnUnload` cleanup is defensive, not required.
+  - **`NetMessageRegistry` is RUNTIME reflection, not source
+    generation.** Build-time protobuf descriptor scan + enum-name-based
+    mapping rules (`k_EUserMsg_Foo` → `CCitadelUserMsg_Foo`, 12 enum
+    types mapped). Manual override via `RegisterManual<T>`.
+  - **`EntityData<T>` is keyed by `uint EntityHandle`**, not pointer.
+    Handles carry a generation counter; auto-cleanup via
+    `EntityDataRegistry` on entity delete (weak-reference registry).
+  - **Config key = plugin C# class name**, NOT folder name
+    (distinct from `gamemodes.json` which uses the folder name).
+    `configs/<ClassName>/<ClassName>.jsonc`. First-load auto-creates
+    a defaulted file with a `// Configuration for …` header.
+    `IConfig` marker is optional; `Validate()` clamp-in-place is the
+    idiomatic pattern.
+  - **`HookResult` aggregation across plugins is MAX-wins**. All
+    plugins always see every event — no plugin can short-circuit
+    dispatch to others.
+  - **`AbilityAttemptEvent` is mask-based**, not boolean — plugins mutate
+    `BlockedButtons`/`ForcedButtons` (OR'd across plugins).
+  - **`CheckTransmitEvent.Hide`** clears a bit in a native `ulong*`
+    transmit bitmap; must be re-applied every tick.
+  - **GameEventSourceGenerator** sorts `.gameevents` files
+    alphabetically; `core.gameevents` (c) < `game.gameevents` (g) so
+    `game` overrides `core` for duplicates. Field types `long`/`short`/
+    `byte` all narrow to C# `int` (no `GetLong` accessor).
+  - **`Players.MaxSlot = 31`** but RecipientFilter/CheckTransmit bitmaps
+    iterate 64 bits. 31 is the documented player slot cap; underlying
+    infrastructure handles 64.
+  - **`SchemaAccessor<T>.Set` auto-calls `NotifyStateChanged`** if the
+    field was networked at resolve-time. Plugins don't manually fire the
+    notification — accessor does it.
+  - **Chat command dispatcher strips prefix before lookup.**
+    `PluginLoader.ChatCommands.cs:14-47` — so `[ChatCommand("foo")]`
+    handles both `/foo` and `!foo`, while `[ChatCommand("!foo")]`
+    handles only `!foo`. **Reconciles the contradiction flagged in the
+    previous log entry** about LockTimer's bare-name registrations.
+- **Example plugin patterns catalogued (11 plugins):**
+  - AutoRestart — countdown timer sequences with `CancelOnMapChange`
+  - ChatRelay — outgoing net message hook with rebroadcast re-entrance
+    guard
+  - Dumper — admin ConVar/ConCommand enumeration dump
+  - ExampleTimer — full ITimer tour
+  - ItemRotation — complex nested config + game-mode state machine
+  - ItemTest — v0.4.5 `AddItem(enhanced)`, `params string[]` commands,
+    PrintToConsole
+  - RollTheDice — ParticleSystem builder, KeyValues3+AddModifier,
+    nested timers, per-pawn state
+  - Scourge — `OnTakeDamage` ability filter, DOT sequence with
+    `EntityData<IHandle>`
+  - SetModel — minimal precache + SetModel
+  - Tag — full game-mode with batch ConVar setup, team assignment,
+    mask-based ability blocking
+- **Surprises:**
+  - The `[ChatCommand]` convention reconciliation — prior log entry's
+    contradiction flag was incorrect. The dispatcher's prefix-stripping
+    behaviour makes bare-name registrations valid.
+  - `NetMessageRegistry` runtime reflection — prior scan summary
+    incorrectly claimed this was a source generator.
+  - `EntityData<T>` uses handles (with generation counters), not raw
+    entity references — safer than pointer-based keys across map
+    changes.
+  - `GameEventSourceGenerator` narrows `long`/`short`/`byte` to `int`
+    — a 64-bit event field declared as `long` is silently lossy; use
+    `uint64` for full precision.
+- **Contradictions flagged:**
+  - Prior log's claim that `[ChatCommand("zones")]` is a latent bug —
+    reconciled. It's valid; the dispatcher strips prefixes.
+  - Prior scan summary's source-generator claim for NetMessageRegistry
+    — corrected: it's runtime reflection.
+
 ## [2026-04-22] — ingest deadworks v0.4.5 release notes
 
 - **Operation:** ingest

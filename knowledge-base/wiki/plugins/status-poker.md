@@ -9,6 +9,9 @@ sources:
 related:
   - "[[deadworks-runtime]]"
   - "[[plugin-build-pipeline]]"
+  - "[[timer-api]]"
+  - "[[plugin-config]]"
+  - "[[examples-index]]"
 created: 2026-04-21
 updated: 2026-04-21
 confidence: low

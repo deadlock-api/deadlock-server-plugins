@@ -21,6 +21,9 @@ what to load — keep it concise and current.
 - [[deathmatch]] — team-vs-team deathmatch gamemode on `dl_midtown`
 - [[lock-timer]] — zone-based lock-timer gamemode with YAML zone config
 - [[status-poker]] — periodic status/keepalive poker plugin
+- [[examples-index]] — index of the 11 Deadworks example plugins (AutoRestart,
+  ChatRelay, Dumper, ExampleTimer, ItemRotation, ItemTest, RollTheDice,
+  Scourge, SetModel, Tag)
 
 ## Concepts
 
@@ -31,6 +34,8 @@ what to load — keep it concise and current.
   teams/lanes, heroes, flex-slot, walker, NPC classnames, pause ConVars
 - [[deadworks-runtime]] — C++ native + C# managed plugin host: bootstrap,
   hooks, nethost/hostfxr, PluginLoader dispatch, hot reload, shared API
+- [[plugin-api-surface]] — umbrella map of every file under
+  `DeadworksManaged.Api/`; enum reference; canonical idioms
 - [[plugin-build-pipeline]] — csproj triple-mode, `gamemodes.json`,
   `extra-plugins` BuildKit context, Directory.Build.targets, protobuf
   plugin gotcha, CI workflows
@@ -46,6 +51,20 @@ what to load — keep it concise and current.
 - [[protobuf-pipeline]] — 3-era evolution (vendored → auto-update →
   build-time sourcesdk protoc), C++ vs managed proto sets, Google.Protobuf
   in plugin csprojs
+- [[command-attribute]] — v0.4.5+ unified `[Command]`: typed arg binding,
+  tokenizer, slot kinds, `CommandException`, migration from `[ChatCommand]`
+- [[timer-api]] — `ITimer` (Once/Every/Sequence/NextTick), `IStep`/`Pace`,
+  `Duration` tick-vs-realtime, `CancelOnMapChange`
+- [[events-surface]] — full 23-hook `IDeadworksPlugin` list, `HookResult`
+  max-wins, `AbilityAttemptEvent` masks, `CheckTransmitEvent`
+- [[schema-accessors]] — `SchemaAccessor<T>` with UTF-8 literals, Players,
+  NativeEntityFactory, `EntityData<T>` auto-cleanup
+- [[netmessages-api]] — `NetMessages.Send/Hook`, `[NetMessageHandler]`,
+  runtime enum→proto name mapping table, `RecipientFilter`
+- [[plugin-config]] — `[PluginConfig]`, `IConfig.Validate`, hot-reload,
+  JSONC auto-creation, class-name keyed paths
+- [[gameevent-source-generator]] — `.gameevents` → typed `*Event` classes;
+  type mapping table; file ordering invariant
 
 ## Operations
 
@@ -61,6 +80,8 @@ what to load — keep it concise and current.
   extracts across four sibling project dirs
 - [[deadworks-0.4.5-release]] — v0.4.5 release notes: `[Command]` attribute,
   port revert to 27067, `Slot`/`HeroID`/`AddItem(enhanced)` additions
+- [[deadworks-scan-2026-04-22]] — deep scan of `../deadworks/` API surface,
+  example plugins, and native layout (10 raw notes)
 
 ## Comparisons
 
@@ -68,6 +89,6 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 17 (index, log, overview, glossary, 2 source,
-3 plugin, 4 concept, 4 entity, 2 operation)
-**Last ingest:** 2026-04-22 — deadworks v0.4.5 release notes
+**Total wiki pages:** 27 (index, log, overview, glossary, 3 source,
+4 plugin, 5 concept, 11 entity, 2 operation)
+**Last ingest:** 2026-04-22 — deadworks API surface & examples scan

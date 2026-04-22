@@ -2,6 +2,7 @@
 title: Docker build — cross-compile + publish
 type: operation
 sources:
+  - knowledge-base/raw/notes/2026-04-22-deadworks-native-layout.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-328372c6.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-3beeff54.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-4972c10e.md
