@@ -5,6 +5,12 @@ created: 2026-04-21
 updated: 2026-04-22
 ---
 
+_Last ingest: 2026-04-22 — TrooperInvasion round-cycling + lane-gating +
+HUD announcements + deletion of match-clock anchor code + event-driven
+empty-server cleanup. Plus reusable findings: `citadel_active_lane`
+bitmask, `CCitadelUserMsg_HudGameAnnouncement` idiom, scheduler
+timer-IHandle tracking pattern._
+
 # Content Catalog
 
 The master catalog of every page in this wiki. Agents read this first to decide
@@ -21,6 +27,7 @@ what to load — keep it concise and current.
 - [[deathmatch]] — team-vs-team deathmatch gamemode on `dl_midtown`
 - [[lock-timer]] — zone-based lock-timer gamemode with YAML zone config
 - [[status-poker]] — periodic status/keepalive poker plugin
+- [[trooper-invasion]] — PvE co-op gamemode, all humans on team 2 vs engine NPCs
 - [[examples-index]] — index of the 11 Deadworks example plugins (AutoRestart,
   ChatRelay, Dumper, ExampleTimer, ItemRotation, ItemTest, RollTheDice,
   Scourge, SetModel, Tag)
@@ -89,6 +96,6 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 27 (index, log, overview, glossary, 3 source,
-4 plugin, 5 concept, 11 entity, 2 operation)
-**Last ingest:** 2026-04-22 — deadworks API surface & examples scan
+**Total wiki pages:** 28 (index, log, overview, glossary, 3 source,
+5 plugin, 5 concept, 11 entity, 2 operation)
+**Last ingest:** 2026-04-22 — TrooperInvasion plugin scaffold

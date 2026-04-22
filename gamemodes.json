@@ -1,5 +1,6 @@
 {
   "normal": ["StatusPoker"],
   "lock-timer": ["StatusPoker", "LockTimer"],
-  "deathmatch": ["StatusPoker", "Deathmatch"]
+  "deathmatch": ["StatusPoker", "Deathmatch"],
+  "trooper-invasion": ["StatusPoker", "TrooperInvasion"]
 }

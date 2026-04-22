@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Deadworks Server": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Deadlock\\game\\bin\\win64\\deadworks.exe",
+      "workingDirectory": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Deadlock\\game\\bin\\win64"
+    }
+  }
+}

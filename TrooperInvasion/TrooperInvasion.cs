@@ -1,0 +1,686 @@
+using System.Numerics;
+using DeadworksManaged.Api;
+
+namespace TrooperInvasion;
+
+public class TrooperInvasionConfig
+{
+}
+
+public class TrooperInvasionPlugin : DeadworksPluginBase
+{
+    public override string Name => "TrooperInvasion";
+
+    // Humans on Amber. Team 3 gets no human players; the engine still spawns team-3
+    // troopers because we keep the spawn system capable of firing — we just gate it
+    // ourselves per wave via the citadel_trooper_spawn_enabled ConVar.
+    private const int HumanTeam = 2;
+    private const int EnemyTeam = 3;
+
+    private const string PatronDesigner = "npc_barrack_boss";
+
+    // Starter stipend + a per-wave catch-up so a late joiner at wave N isn't
+    // stuck in tier-0 while everyone else has earned progression.
+    private const int StarterGold = 2500;
+    private const int CatchUpGoldPerWave = 500;
+    // Seeded once per player slot — persists across respawns so death costs you
+    // the gold you had earned. Cleared on disconnect so a reconnect gets a fresh seed.
+    private readonly HashSet<int> _starterGoldSeeded = new();
+
+    private const string CmdChangeTeam = "changeteam";
+    private const string CmdJoinTeam = "jointeam";
+
+    private static readonly SchemaAccessor<bool> _flexSlotsForcedUnlocked = new("CCitadelGameRules"u8, "m_bFlexSlotsForcedUnlocked"u8);
+    private static readonly SchemaAccessor<short> _nFlexSlotsUnlocked = new("CCitadelTeam"u8, "m_nFlexSlotsUnlocked"u8);
+    private const short AllFlexSlotUnlockBits = 0xF;
+
+    // Wave pacing — ConVar-driven. Each wave enables trooper spawn for a burst
+    // window, then disables it, so the engine fires spawn pulses for that window.
+    // Engine caps squad size at 8 members ("Squad … is too big!!! Replacing last
+    // member" spew when exceeded), so total wave volume comes from pulses × squad.
+    // Wave cadence scales linearly with player count: 1p → 20s, 32p → 5s.
+    private const int MaxSquadSize = 8;
+    // Burst seconds scale linearly with player count; solo play gets tiny bursts.
+    private const float MinBurstSeconds = 0.75f;
+    private const float MaxBurstSeconds = 6f;
+    private const float FirstWaveGraceSeconds = 10f;
+    private const float MinPlayers = 1f;
+    private const float MaxPlayers = 32f;
+    // Rounds: every RoundLength waves the scheduler pauses for IntermissionSeconds
+    // then auto-restarts at wave 1 with fresh onboarding ramp. Without this the
+    // wave counter (and late-join catch-up gold) would grow unbounded over a long
+    // session. Player-earned progression (items, AP, accumulated gold) persists
+    // across rounds; only the horde counter resets.
+    private const int RoundLength = 20;
+    private const float IntermissionSeconds = 30f;
+    private int _roundNum = 1;
+    private const float SlowWaveIntervalSeconds = 20f;
+    private const float FastWaveIntervalSeconds = 5f;
+    // On-map enemy-trooper cap scales with players: solo can't be buried (small
+    // cap), large groups have headroom that matches their kill rate.
+    private const int MinTrooperCap = 80;
+    private const int MaxTrooperCap = 600;
+    private readonly HashSet<int> _aliveEnemyTroopers = new();
+    private static readonly string[] _trooperDesigners = { "npc_trooper", "npc_trooper_boss" };
+
+    // Pending timers tracked so DisarmWaves can cancel them. Without this, a
+    // disarm + rapid re-arm would leave stale grace/burst-end timers firing into
+    // the new session, producing back-to-back waves or premature spawn cutoff.
+    private IHandle? _pendingWaveTimer;
+    private IHandle? _pendingBurstEnd;
+    // Auto-armed on first player join, auto-disarmed on last disconnect. The
+    // !startwaves / !stopwaves commands still work as manual overrides.
+    private bool _wavesActive;
+
+    private int _waveNum;
+    private bool _modeOver;
+
+    [PluginConfig]
+    public TrooperInvasionConfig Config { get; set; } = new();
+
+    public override void OnLoad(bool isReload)
+    {
+        Console.WriteLine(isReload ? "TrooperInvasion reloaded!" : "TrooperInvasion loaded!");
+    }
+
+    public override void OnStartupServer()
+    {
+        // All spawn/tuning ConVars applied here, BEFORE trooper subsystem starts
+        // streaming. Mutating these at runtime (mid-frame, from !startwaves) crashed
+        // the engine natively — likely because they re-seed spawn-interval tables
+        // or resize per-lane buffers and the engine doesn't re-entrancy-guard it.
+        Server.ExecuteCommand("hostname \"24/7 Trooper Invasion | Co-op PvE | Defend the Patron\"");
+        try { ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0); } catch (Exception ex) { Console.WriteLine($"[TI] convar trooper_spawn: {ex.Message}"); }
+        try { ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1); } catch (Exception ex) { Console.WriteLine($"[TI] convar purchasing: {ex.Message}"); }
+        try { ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3); } catch (Exception ex) { Console.WriteLine($"[TI] convar respawn_time: {ex.Message}"); }
+        try { ConVar.Find("citadel_allow_duplicate_heroes")?.SetInt(1); } catch (Exception ex) { Console.WriteLine($"[TI] convar dup_heroes: {ex.Message}"); }
+        // Cap raised far above vanilla 25 so hordes aren't throttled by the per-lane
+        // ceiling. Spawn intervals short so pulses fire continuously during the burst
+        // window (the !startwaves toggle gates when spawning is eligible; the intervals
+        // govern cadence within that window).
+        // Per-lane cap kept moderate. With squad=8 × 4 lanes × 1s pulse × 4s burst
+        // the engine emits ~128 troopers/wave before friendly-half removal halves
+        // that on-map. Going much higher (2048) correlated with native AV crashes
+        // during wave spawn, presumably because our OnEntitySpawned Remove() storm
+        // collided with the engine's spawn iterator.
+        try { ConVar.Find("citadel_trooper_max_per_lane")?.SetInt(256); } catch (Exception ex) { Console.WriteLine($"[TI] convar max_per_lane: {ex.Message}"); }
+        try { ConVar.Find("citadel_trooper_spawn_interval_early")?.SetFloat(1f); } catch (Exception ex) { Console.WriteLine($"[TI] convar spawn_interval_early: {ex.Message}"); }
+        try { ConVar.Find("citadel_trooper_spawn_interval_late")?.SetFloat(1f); } catch (Exception ex) { Console.WriteLine($"[TI] convar spawn_interval_late: {ex.Message}"); }
+        try { ConVar.Find("citadel_trooper_spawn_interval_very_late")?.SetFloat(1f); } catch (Exception ex) { Console.WriteLine($"[TI] convar spawn_interval_very_late: {ex.Message}"); }
+        try { ConVar.Find("citadel_trooper_gold_reward_bonus_per_minute")?.SetInt(0); } catch (Exception ex) { Console.WriteLine($"[TI] convar gold_bonus_per_min: {ex.Message}"); }
+        try { ConVar.Find("citadel_trooper_spawn_wave_spread")?.SetFloat(2f); } catch (Exception ex) { Console.WriteLine($"[TI] convar wave_spread: {ex.Message}"); }
+        try { ConVar.Find("citadel_trooper_spawn_initial")?.SetFloat(0f); } catch (Exception ex) { Console.WriteLine($"[TI] convar spawn_initial: {ex.Message}"); }
+
+        // Fresh-map reset: drop any state that might be stale from the previous
+        // map. Timers below use CancelOnMapChange so they self-cancel on map
+        // transitions, but the managed state fields live on the plugin instance.
+        _wavesActive = false;
+        _modeOver = false;
+        _waveNum = 0;
+        _roundNum = 1;
+        _pendingWaveTimer?.Cancel(); _pendingWaveTimer = null;
+        _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
+        _aliveEnemyTroopers.Clear();
+        _starterGoldSeeded.Clear();
+
+        // Match-clock and GameState left to the engine — the HUD clock runs natively.
+        // UnlockFlexSlots scheduled per-player-join in OnClientFullConnect, not at
+        // startup — the per-team CCitadelTeam entities don't exist until a player
+        // is on that team, so a boot-time call would no-op on an empty map.
+        // Empty-server cleanup (spawn-disable + trooper cull) is handled inside
+        // OnClientDisconnect the moment the last player leaves — no polling interval.
+    }
+
+    private void CullAllTroopers()
+    {
+        // Snapshot the enumeration first — Remove mutates the entity list.
+        var victims = Entities.All.Where(e => _trooperDesigners.Contains(e.DesignerName)).Select(e => e.EntityIndex).ToArray();
+        foreach (var idx in victims)
+        {
+            Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
+        }
+        _aliveEnemyTroopers.Clear();
+    }
+
+    private int HumanPlayerCount(int excludeEntityIndex = -1) =>
+        Players.GetAll().Count(p => p.TeamNum == HumanTeam && p.EntityIndex != excludeEntityIndex);
+
+    private float ComputeWaveInterval(int humans)
+    {
+        // Linear interp: 1 player → SlowWaveIntervalSeconds, 32 → FastWaveIntervalSeconds.
+        float clamped = Math.Clamp(humans, MinPlayers, MaxPlayers);
+        float t = (clamped - MinPlayers) / (MaxPlayers - MinPlayers);
+        return SlowWaveIntervalSeconds + t * (FastWaveIntervalSeconds - SlowWaveIntervalSeconds);
+    }
+
+    private void ArmWaves()
+    {
+        if (_modeOver || _wavesActive) return;
+        _wavesActive = true;
+        Console.WriteLine($"[TI] Wave scheduler armed (round {_roundNum}).");
+        AnnounceHud($"ROUND {_roundNum}", $"First wave in {FirstWaveGraceSeconds:0}s — defend the Patron!");
+        _pendingWaveTimer?.Cancel();
+        _pendingWaveTimer = Timer.Once(((int)(FirstWaveGraceSeconds * 1000)).Milliseconds(), () =>
+        {
+            _pendingWaveTimer = null;
+            if (!_wavesActive) return;
+            RunWave();
+        });
+    }
+
+    private void DisarmWaves(string reason)
+    {
+        _wavesActive = false;
+        _pendingWaveTimer?.Cancel(); _pendingWaveTimer = null;
+        _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
+        Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+        CullAllTroopers();
+        // Reset wave counter so the next session (new player joining later) starts
+        // from a fresh onboarding ramp at wave 1, not mid-progression at wave N.
+        _waveNum = 0;
+        Console.WriteLine($"[TI] Wave scheduler paused ({reason}). Troopers culled, wave counter reset.");
+    }
+
+    private void ScheduleNextWave()
+    {
+        if (_modeOver || !_wavesActive) return;
+        float interval = ComputeWaveInterval(HumanPlayerCount());
+        _pendingWaveTimer?.Cancel();
+        _pendingWaveTimer = Timer.Once(((int)(interval * 1000)).Milliseconds(), () =>
+        {
+            _pendingWaveTimer = null;
+            if (!_wavesActive) return;
+            RunWave();
+        });
+    }
+
+    private void BeginIntermission(float postBurstDelaySeconds)
+    {
+        int completed = _waveNum;
+        // The round-end announcement must fire while _wavesActive is still true
+        // (otherwise RunWave's continuation guard would cancel us).
+        AnnounceHud($"ROUND {_roundNum} CLEARED", $"{completed} waves survived — fresh round in {IntermissionSeconds:0}s");
+        Console.WriteLine($"[TI] Round {_roundNum} complete at wave {completed}. Intermission {IntermissionSeconds:0}s.");
+
+        // Let the burst window finish before culling + announcing intermission start.
+        _pendingWaveTimer?.Cancel();
+        _pendingWaveTimer = Timer.Once(((int)(postBurstDelaySeconds * 1000)).Milliseconds(), () =>
+        {
+            _pendingWaveTimer = null;
+            // Disarm resets _waveNum=0 and culls remaining troopers.
+            DisarmWaves($"round {_roundNum} complete");
+            _roundNum++;
+            // Fresh seed for everyone currently on the server — new round, wave-1
+            // catch-up (which is 0 bonus gold) will apply to next spawn ritual.
+            _starterGoldSeeded.Clear();
+
+            _pendingWaveTimer = Timer.Once(((int)(IntermissionSeconds * 1000)).Milliseconds(), () =>
+            {
+                _pendingWaveTimer = null;
+                if (HumanPlayerCount() > 0) ArmWaves();
+                else Console.WriteLine("[TI] Intermission ended with empty server — staying dormant until a player joins.");
+            });
+        });
+    }
+
+    private static void AnnounceHud(string title, string description)
+    {
+        // HUD-toast style announcement shown to every player. Used for
+        // round-boundary events only — per-wave announcements stay as chat so
+        // the HUD isn't spammed every 5-20 seconds at high player counts.
+        var msg = new CCitadelUserMsg_HudGameAnnouncement
+        {
+            TitleLocstring = title,
+            DescriptionLocstring = description,
+        };
+        NetMessages.Send(msg, RecipientFilter.All);
+    }
+
+    private int ComputeActiveLanes(int humans)
+    {
+        // At least 2 players per active lane; clamped to [1, 4]. Examples:
+        //   1-3 players → 1 lane
+        //   4-5 players → 2 lanes
+        //   6-7 players → 3 lanes
+        //   8+ players  → 4 lanes (Deadlock map has 4 lanes total)
+        int lanes = Math.Clamp(humans / 2, 1, 4);
+        return lanes;
+    }
+
+    private static int LaneBitmask(int activeLanes) => (1 << activeLanes) - 1;
+
+    private int ComputeTrooperCap(int humans)
+    {
+        float clampedP = Math.Clamp(humans, MinPlayers, MaxPlayers);
+        float t = (clampedP - MinPlayers) / (MaxPlayers - MinPlayers);
+        return (int)(MinTrooperCap + t * (MaxTrooperCap - MinTrooperCap));
+    }
+
+    private float ComputeBurstSeconds(int waveNum, int humans)
+    {
+        // Player-scaled base: 1p → MinBurstSeconds (gentle), 32p → MaxBurstSeconds.
+        float clampedP = Math.Clamp(humans, MinPlayers, MaxPlayers);
+        float t = (clampedP - MinPlayers) / (MaxPlayers - MinPlayers);
+        float playerScaled = MinBurstSeconds + t * (MaxBurstSeconds - MinBurstSeconds);
+        // Onboarding ramp for first three waves keeps wave-1 tiny even at high counts.
+        float ramp = waveNum switch
+        {
+            1 => 0.35f,
+            2 => 0.55f,
+            3 => 0.8f,
+            _ => 1f,
+        };
+        return playerScaled * ramp;
+    }
+
+    private void RunWave()
+    {
+        if (_modeOver || !_wavesActive) return;
+
+        int humans = HumanPlayerCount();
+        if (humans == 0)
+        {
+            DisarmWaves("no players");
+            return;
+        }
+
+        int cap = ComputeTrooperCap(humans);
+        int alive = _aliveEnemyTroopers.Count;
+        if (alive >= cap)
+        {
+            Chat.PrintToChatAll($"[TI] Wave skipped — {alive} troopers still alive (cap {cap})");
+            Console.WriteLine($"[TI] Wave skipped: alive={alive} cap={cap} humans={humans}");
+            // Still schedule another attempt so kills eventually unblock the round.
+            ScheduleNextWave();
+            return;
+        }
+
+        _waveNum++;
+        int goldReward = 120 + _waveNum * 15;
+        int activeLanes = ComputeActiveLanes(humans);
+        float interval = ComputeWaveInterval(humans);
+        float burstSeconds = ComputeBurstSeconds(_waveNum, humans);
+
+        // Route mid-game ConVar writes through Server.ExecuteCommand rather than
+        // ConVar.Find().SetInt. The direct-Set path crashed the engine natively on
+        // !startwaves — the console path goes through the engine's own CCvar
+        // dispatch and is the known-stable surface (same as the `hostname` write
+        // at startup and Deathmatch's pattern).
+        Server.ExecuteCommand($"citadel_trooper_squad_size {MaxSquadSize}");
+        Server.ExecuteCommand($"citadel_trooper_gold_reward {goldReward}");
+        Server.ExecuteCommand($"citadel_active_lane {LaneBitmask(activeLanes)}");
+        Server.ExecuteCommand("citadel_trooper_spawn_enabled 1");
+
+        Chat.PrintToChatAll($"[TI] R{_roundNum} W{_waveNum}/{RoundLength} — bounty {goldReward} (next in {interval:0}s, lanes {activeLanes}, cap {cap})");
+        Console.WriteLine($"[TI] Round {_roundNum} Wave {_waveNum}: gold={goldReward} humans={humans} burst={burstSeconds:0.0}s nextIn={interval:0.0}s lanes={activeLanes} cap={cap}");
+
+        _pendingBurstEnd?.Cancel();
+        _pendingBurstEnd = Timer.Once(((int)(burstSeconds * 1000)).Milliseconds(), () =>
+        {
+            _pendingBurstEnd = null;
+            Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+        });
+
+        // Round boundary: trigger intermission instead of scheduling another wave.
+        if (_waveNum >= RoundLength)
+            BeginIntermission(burstSeconds + 2f);
+        else
+            ScheduleNextWave();
+    }
+
+private static void UnlockFlexSlots()
+    {
+        // Schema-based — same pattern as Deathmatch, known stable. The sv_cheats-toggle
+        // concommand alternative coincided with startup crashes, so reverting.
+        try
+        {
+            if (GameRules.IsValid)
+            {
+                var ptr = GameRules.Pointer;
+                if (!_flexSlotsForcedUnlocked.Get(ptr))
+                    _flexSlotsForcedUnlocked.Set(ptr, true);
+            }
+            foreach (var ent in Entities.All)
+            {
+                if (ent.Classname != "CCitadelTeam") continue;
+                if (_nFlexSlotsUnlocked.Get(ent.Handle) != AllFlexSlotUnlockBits)
+                    _nFlexSlotsUnlocked.Set(ent.Handle, AllFlexSlotUnlockBits);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TI] UnlockFlexSlots: {ex.Message}");
+        }
+    }
+
+    public override void OnEntitySpawned(EntitySpawnedEvent args)
+    {
+        // Trooper spawn handler:
+        //   - friendly (team-2): cull via deferred Remove (direct Remove inside
+        //     OnEntitySpawned during heavy cascades AV'd — see
+        //     `2026-04-22-onentityspawned-remove-deferral.md`)
+        //   - enemy (team-3): track for the MaxAliveEnemyTroopers cap; also cull
+        //     if the server is empty, so an engine-emitted initial trooper never
+        //     lingers until the first player shows up.
+        var ent = args.Entity;
+        var designer = ent.DesignerName;
+        if (designer != "npc_trooper" && designer != "npc_trooper_boss") return;
+        int idx = ent.EntityIndex;
+
+        if (ent.TeamNum == HumanTeam)
+        {
+            Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
+            return;
+        }
+
+        // Strict enemy team — neutral/unassigned-team troopers (rare, from map
+        // scripting) are left alone, neither tracked nor culled.
+        if (ent.TeamNum != EnemyTeam) return;
+
+        int humans = HumanPlayerCount();
+        if (humans == 0)
+        {
+            Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
+            return;
+        }
+
+        _aliveEnemyTroopers.Add(idx);
+        if (_aliveEnemyTroopers.Count >= ComputeTrooperCap(humans))
+            Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+    }
+
+    public override void OnEntityDeleted(EntityDeletedEvent args)
+    {
+        _aliveEnemyTroopers.Remove(args.Entity.EntityIndex);
+    }
+
+    [GameEventHandler("gameover_msg")]
+    public HookResult OnGameoverMsg(GameoverMsgEvent args) => HookResult.Stop;
+
+    [GameEventHandler("round_end")]
+    public HookResult OnRoundEnd(RoundEndEvent args) => HookResult.Stop;
+
+    [GameEventHandler("entity_killed")]
+    public HookResult OnEntityKilled(EntityKilledEvent args)
+    {
+        if (_modeOver) return HookResult.Continue;
+        var killed = CBaseEntity.FromIndex(args.EntindexKilled);
+        if (killed?.DesignerName != PatronDesigner) return HookResult.Continue;
+        if (killed.TeamNum == HumanTeam) HandleDefeat();
+        else                              HandleVictory();
+        return HookResult.Continue;
+    }
+
+    private void HandleVictory()
+    {
+        _modeOver = true;
+        Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+        AnnounceHud("VICTORY!", $"Sapphire Patron destroyed — survived {_waveNum} waves");
+        Console.WriteLine($"[TI] VICTORY at wave {_waveNum}");
+    }
+
+    private void HandleDefeat()
+    {
+        _modeOver = true;
+        Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+        AnnounceHud("DEFEAT", $"Amber Patron has fallen at wave {_waveNum}");
+        Console.WriteLine($"[TI] DEFEAT at wave {_waveNum}");
+    }
+
+    public override void OnClientFullConnect(ClientFullConnectEvent args)
+    {
+        var controller = args.Controller;
+        if (controller == null) return;
+
+        var usage = new Dictionary<int, int>();
+        foreach (var p in Players.GetAll())
+        {
+            if (p.EntityIndex == controller.EntityIndex) continue;
+            int id = p.PlayerDataGlobal.HeroID;
+            if (id > 0) usage[id] = usage.GetValueOrDefault(id) + 1;
+        }
+
+        controller.ChangeTeam(HumanTeam);
+
+        var available = Enum.GetValues<Heroes>()
+            .Select(h => (hero: h, count: usage.GetValueOrDefault(h.GetHeroData()?.HeroID ?? 0), inGame: h.GetHeroData()?.AvailableInGame == true))
+            .Where(x => x.inGame)
+            .ToArray();
+
+        int min = available.Min(x => x.count);
+        var leastPresent = available.Where(x => x.count == min).Select(x => x.hero).ToArray();
+        var hero = leastPresent[Random.Shared.Next(leastPresent.Length)];
+        controller.SelectHero(hero);
+        // UnlockFlexSlots intentionally NOT called synchronously here — startup
+        // Timer.Once(1.Seconds()) in OnStartupServer already handles it globally.
+
+        Console.WriteLine($"[TI] Slot {args.Slot} -> team {HumanTeam}, hero {hero.ToHeroName()}");
+
+        Timer.Once(1.Seconds(), UnlockFlexSlots).CancelOnMapChange();
+
+        // Auto-arm wave scheduler on first-player join. Idempotent: ArmWaves no-ops
+        // if already active or mode-over.
+        ArmWaves();
+    }
+
+    public override HookResult OnClientConCommand(ClientConCommandEvent e)
+    {
+        // Block team swaps only. `selecthero` and `citadel_hero_pick` pass through
+        // so the normal in-game hero-pick UI works — every player can re-pick at
+        // will. `!hero <name>` remains as a fuzzy-name alternative.
+        if (e.Command == CmdChangeTeam || e.Command == CmdJoinTeam)
+            return HookResult.Stop;
+        return HookResult.Continue;
+    }
+
+    private void ApplySpawnRitual(CCitadelPlayerPawn? pawn)
+    {
+        // Guard every step — pawn can be mid-initialization when these events fire.
+        // Empty model in server log ("for entity \"player\"") suggests hero assets
+        // aren't fully settled yet, so we wrap each side effect.
+        try { HealToFull(pawn); } catch (Exception ex) { Console.WriteLine($"[TI] HealToFull: {ex.Message}"); }
+        try { SeedStarterGold(pawn); } catch (Exception ex) { Console.WriteLine($"[TI] SeedStarterGold: {ex.Message}"); }
+        // UnlockFlexSlots intentionally NOT called here — sv_cheats toggle mid-event
+        // appears to be a crash trigger. Startup Timer.Once handles it once and for all.
+    }
+
+    private void SeedStarterGold(CCitadelPlayerPawn? pawn)
+    {
+        // One-time per-slot seed. Respawns don't re-seed — death should cost you the
+        // souls you earned. Reconnects re-seed because OnClientDisconnect clears the slot.
+        //
+        // Catch-up: joining at wave N gets StarterGold + (N-1) * CatchUpGoldPerWave so a
+        // late arrival isn't stuck in tier-0 vs veterans with accumulated progression.
+        int slot = pawn?.Controller?.Slot ?? -1;
+        if (slot < 0 || !_starterGoldSeeded.Add(slot)) return;
+        int seed = StarterGold + Math.Max(0, _waveNum - 1) * CatchUpGoldPerWave;
+        pawn?.SetCurrency(ECurrencyType.EGold, seed);
+        Console.WriteLine($"[TI] Seeded slot {slot} with {seed} gold (wave={_waveNum})");
+    }
+
+    private void DeferredSpawnRitual(CCitadelPlayerPawn? pawn)
+    {
+        // Defer one tick so the engine finishes hero-asset setup before we touch the pawn.
+        if (pawn == null) return;
+        int idx = pawn.EntityIndex;
+        Timer.Once(1.Ticks(), () =>
+        {
+            var live = CBaseEntity.FromIndex<CCitadelPlayerPawn>(idx);
+            if (live == null) return;
+            ApplySpawnRitual(live);
+        });
+    }
+
+    [GameEventHandler("player_hero_changed")]
+    public HookResult OnPlayerHeroChanged(PlayerHeroChangedEvent args)
+    {
+        DeferredSpawnRitual(args.Userid?.As<CCitadelPlayerPawn>());
+        return HookResult.Continue;
+    }
+
+    [GameEventHandler("player_respawned")]
+    public HookResult OnPlayerRespawned(PlayerRespawnedEvent args)
+    {
+        DeferredSpawnRitual(args.Userid?.As<CCitadelPlayerPawn>());
+        return HookResult.Continue;
+    }
+
+    private void HealToFull(CCitadelPlayerPawn? pawn)
+    {
+        if (pawn == null) return;
+        TryHeal(pawn.EntityIndex, 0);
+    }
+
+    private void TryHeal(int idx, int attempt)
+    {
+        var pawn = CBaseEntity.FromIndex<CCitadelPlayerPawn>(idx);
+        if (pawn == null) return;
+        int max = pawn.GetMaxHealth();
+        if (max > 0) { pawn.Health = max; return; }
+        if (attempt >= 20) return;
+        Timer.Once(1.Ticks(), () => TryHeal(idx, attempt + 1));
+    }
+
+    private static readonly string[] _helpLines = {
+        "[TI] !help — show this message",
+        "[TI] !hero <name> — swap hero (fuzzy match)",
+        "[TI] !stuck / !suicide — kill yourself to respawn",
+        "[TI] !wave — show current wave",
+        "[TI] !startwaves — arm wave engine + begin scheduler",
+        "[TI] !stopwaves — halt scheduler (and close spawn window)",
+        "[TI] !nextwave — trigger one wave immediately (dev)",
+    };
+
+    [Command("help", Description = "Show available TrooperInvasion commands")]
+    public void CmdHelp(CCitadelPlayerController caller)
+    {
+        foreach (var line in _helpLines)
+            Chat.PrintToChat(caller.Slot, line);
+    }
+
+    [Command("wave", Description = "Show current round and wave")]
+    public void CmdWave(CCitadelPlayerController caller)
+    {
+        Chat.PrintToChat(caller.Slot, $"[TI] Round {_roundNum} Wave {_waveNum}/{RoundLength}{(_modeOver ? " (MODE OVER)" : "")}");
+    }
+
+    [Command("startwaves", Description = "Manually arm the wave scheduler")]
+    public void CmdStartWaves(CCitadelPlayerController caller)
+    {
+        if (_modeOver) throw new CommandException("[TI] Mode is over.");
+        if (_wavesActive) throw new CommandException("[TI] Waves already running.");
+        ArmWaves();
+    }
+
+    [Command("stopwaves", Description = "Pause the auto wave scheduler")]
+    public void CmdStopWaves(CCitadelPlayerController caller)
+    {
+        DisarmWaves("manual !stopwaves");
+        Chat.PrintToChatAll("[TI] Wave scheduler halted.");
+    }
+
+    [Command("nextwave", Description = "Trigger the next wave immediately (dev)")]
+    public void CmdNextWave(CCitadelPlayerController caller)
+    {
+        if (_modeOver)
+            throw new CommandException("[TI] Mode is over.");
+        bool wasActive = _wavesActive;
+        _wavesActive = true;
+        RunWave();
+        _wavesActive = wasActive;
+    }
+
+    [Command("hero", Description = "Swap hero by fuzzy name")]
+    public void CmdHero(CCitadelPlayerController caller, params string[] nameParts)
+    {
+        int slot = caller.Slot;
+        if (nameParts.Length == 0)
+            throw new CommandException("[TI] usage: !hero <name>");
+
+        var query = string.Join(' ', nameParts).Trim();
+        var matches = FuzzyMatchHero(query);
+        if (matches.Count == 0)
+            throw new CommandException($"[TI] No hero matches '{query}'.");
+        if (matches.Count > 1)
+        {
+            var names = string.Join(", ", matches.Take(6).Select(h => h.ToDisplayName()));
+            throw new CommandException($"[TI] '{query}' is ambiguous: {names}");
+        }
+
+        var hero = matches[0];
+        caller.SelectHero(hero);
+        Chat.PrintToChat(slot, $"[TI] Swapping to {hero.ToDisplayName()}.");
+    }
+
+    [Command("stuck", Description = "Kill yourself to respawn")]
+    [Command("suicide", Description = "Kill yourself to respawn")]
+    public void CmdStuck(CCitadelPlayerController caller)
+    {
+        var pawn = caller.GetHeroPawn()?.As<CCitadelPlayerPawn>();
+        if (pawn == null || !pawn.IsAlive)
+            throw new CommandException("[TI] Not alive.");
+        pawn.Hurt(999_999f);
+    }
+
+    private static List<Heroes> FuzzyMatchHero(string query)
+    {
+        var needle = query.Trim().ToLowerInvariant();
+        var available = Enum.GetValues<Heroes>()
+            .Where(h => h.GetHeroData()?.AvailableInGame == true)
+            .ToArray();
+
+        static string StripPrefix(string s) => s.StartsWith("hero_") ? s[5..] : s;
+
+        var candidates = available
+            .Select(h => (
+                hero: h,
+                display: h.ToDisplayName().ToLowerInvariant(),
+                enumN: h.ToString().ToLowerInvariant(),
+                internalN: StripPrefix(h.ToHeroName()).ToLowerInvariant()))
+            .ToArray();
+
+        bool Any(Func<(Heroes hero, string display, string enumN, string internalN), bool> pred, out List<Heroes> hits)
+        {
+            hits = candidates.Where(pred).Select(c => c.hero).Distinct().ToList();
+            return hits.Count > 0;
+        }
+
+        if (Any(c => c.display == needle || c.enumN == needle || c.internalN == needle, out var exact))
+            return exact;
+        if (Any(c => c.display.StartsWith(needle) || c.enumN.StartsWith(needle) || c.internalN.StartsWith(needle), out var prefix))
+            return prefix;
+        if (Any(c => c.display.Contains(needle) || c.enumN.Contains(needle) || c.internalN.Contains(needle), out var contains))
+            return contains;
+        return new List<Heroes>();
+    }
+
+    public override void OnClientDisconnect(ClientDisconnectedEvent args)
+    {
+        var controller = args.Controller;
+        if (controller == null) return;
+
+        _starterGoldSeeded.Remove(controller.Slot);
+
+        var pawn = controller.GetHeroPawn();
+        if (pawn != null)
+            pawn.Remove();
+        controller.Remove();
+
+        // Last human leaving: full reset. DisarmWaves already does spawn-off +
+        // trooper cull + _waveNum=0 + timer cancel; we additionally reset the
+        // round counter, mode-over flag, and starter-gold ledger so the next
+        // player to ever arrive starts a completely fresh session.
+        if (HumanPlayerCount(controller.EntityIndex) == 0)
+        {
+            DisarmWaves("last player disconnected");
+            _roundNum = 1;
+            _modeOver = false;
+            _starterGoldSeeded.Clear();
+        }
+    }
+
+    public override void OnUnload()
+    {
+        Console.WriteLine("TrooperInvasion unloaded!");
+    }
+}

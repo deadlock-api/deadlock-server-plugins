@@ -55,13 +55,31 @@ services:
       - gamedata-deathmatch:/home/steam/server
       - compatdata-deathmatch:/home/steam/.steam/steam/steamapps/compatdata
 
+  trooper-invasion:
+    <<: *base
+    image: ghcr.io/deadlock-api/deadlock-server-plugins/trooper-invasion:latest
+    ports:
+      - "27018:27018/udp"
+      - "27018:27018/tcp"
+    environment:
+      - SERVER_PORT=27018
+      - DEADWORKS_ENV_PORT=27018
+    volumes:
+      - proton:/opt/proton
+      - gamefiles:/opt/gamefiles
+      - dotnet-cache:/opt/dotnet-cache
+      - gamedata-trooper-invasion:/home/steam/server
+      - compatdata-trooper-invasion:/home/steam/.steam/steam/steamapps/compatdata
+
 volumes:
   proton:
   gamefiles:
   gamedata-normal:
   gamedata-lock-timer:
   gamedata-deathmatch:
+  gamedata-trooper-invasion:
   compatdata-normal:
   compatdata-lock-timer:
   compatdata-deathmatch:
+  compatdata-trooper-invasion:
   dotnet-cache:

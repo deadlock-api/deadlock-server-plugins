@@ -45,6 +45,8 @@ jobs:
               - 'LockTimer/**'
             StatusPoker:
               - 'StatusPoker/**'
+            TrooperInvasion:
+              - 'TrooperInvasion/**'
 
       - name: Compute gamemode matrix
         id: compute

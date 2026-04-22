@@ -58,10 +58,7 @@ public class DeathmatchPlugin : DeadworksPluginBase
     private static readonly SchemaAccessor<float> _matchClockAtLastUpdate = new("CCitadelGameRules"u8, "m_flMatchClockAtLastUpdate"u8);
     private static readonly SchemaAccessor<int> _matchClockUpdateTick = new("CCitadelGameRules"u8, "m_nMatchClockUpdateTick"u8);
     private static readonly SchemaAccessor<uint> _eGameState = new("CCitadelGameRules"u8, "m_eGameState"u8);
-    private static readonly SchemaAccessor<bool> _flexSlotsForcedUnlocked = new("CCitadelGameRules"u8, "m_bFlexSlotsForcedUnlocked"u8);
-    private static readonly SchemaAccessor<short> _nFlexSlotsUnlocked = new("CCitadelTeam"u8, "m_nFlexSlotsUnlocked"u8);
     private static readonly SchemaAccessor<uint> _eLaneColor = new("CNPC_TrooperBoss"u8, "m_eLaneColor"u8);
-    private const short AllFlexSlotUnlockBits = 0xF;
 
     private static readonly HttpClient _rankHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
     // Value.Rank = NaN is a tombstone (404 / unranked). Both real values and tombstones
@@ -156,31 +153,9 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
     private static void UnlockFlexSlots()
     {
-        if (GameRules.IsValid)
-        {
-            var ptr = GameRules.Pointer;
-            if (!_flexSlotsForcedUnlocked.Get(ptr))
-            {
-                _flexSlotsForcedUnlocked.Set(ptr, true);
-                Console.WriteLine("[DM] m_bFlexSlotsForcedUnlocked -> true");
-            }
-        }
-        // m_bFlexSlotsForcedUnlocked is the intended override, but the client may derive
-        // slot availability from the per-team m_nFlexSlotsUnlocked bitmask (unlock conditions:
-        // 2xTier1 kills | 1xTier2 kill | 2xTier2 kills | BaseGuardians). Force every bit on
-        // each CCitadelTeam entity as a fallback.
-        int patched = 0;
-        foreach (var ent in Entities.All)
-        {
-            if (ent.Classname != "CCitadelTeam") continue;
-            if (_nFlexSlotsUnlocked.Get(ent.Handle) != AllFlexSlotUnlockBits)
-            {
-                _nFlexSlotsUnlocked.Set(ent.Handle, AllFlexSlotUnlockBits);
-                patched++;
-            }
-        }
-        if (patched > 0)
-            Console.WriteLine($"[DM] m_nFlexSlotsUnlocked -> 0x{AllFlexSlotUnlockBits:X} on {patched} team(s)");
+        Server.ExecuteCommand("sv_cheats 1");
+        Server.ExecuteCommand("citadel_unlock_flex_slots");
+        Server.ExecuteCommand("sv_cheats 0");
     }
 
     [GameEventHandler("gameover_msg")]
