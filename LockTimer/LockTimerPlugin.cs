@@ -213,51 +213,47 @@ public class LockTimerPlugin : DeadworksPluginBase
         Chat.PrintToChatAll($"[LockTimer] {player.PlayerName} finished in {formatted}");
     }
 
-    [ChatCommand("zones")]
-    public HookResult OnZonesStatus(ChatCommandContext ctx)
+    [Command("zones")]
+    public void OnZonesStatus(CCitadelPlayerController caller)
     {
         var map = Server.MapName;
         string start = _startZone is null ? "none" : "set";
         string end   = _endZone   is null ? "none" : "set";
-        Chat.PrintToChat(ctx.Message.SenderSlot, $"[{Name}] {map}: start={start} end={end}");
+        Chat.PrintToChat(caller.Slot, $"[{Name}] {map}: start={start} end={end}");
 
         _renderer?.ClearAll();
         if (_startZone is not null) _renderer?.Render(_startZone);
         if (_endZone   is not null) _renderer?.Render(_endZone);
-        return HookResult.Handled;
     }
 
-    [ChatCommand("reset")]
-    public HookResult OnReset(ChatCommandContext ctx)
+    [Command("reset")]
+    public void OnReset(CCitadelPlayerController caller)
     {
-        _engine?.Remove(ctx.Message.SenderSlot);
-        Chat.PrintToChat(ctx.Message.SenderSlot, $"[{Name}] run reset");
-        return HookResult.Handled;
+        _engine?.Remove(caller.Slot);
+        Chat.PrintToChat(caller.Slot, $"[{Name}] run reset");
     }
 
-    [ChatCommand("pos")]
-    public HookResult OnPos(ChatCommandContext ctx)
+    [Command("pos")]
+    public void OnPos(CCitadelPlayerController caller)
     {
-        var pawn = ctx.Controller?.GetHeroPawn();
-        if (pawn is null) return HookResult.Handled;
-        int sender = ctx.Message.SenderSlot;
+        var pawn = caller.GetHeroPawn();
+        if (pawn is null) return;
+        int sender = caller.Slot;
         var p = pawn.Position;
         Chat.PrintToChat(sender, $"[{Name}] pos: ({p.X:F1}, {p.Y:F1}, {p.Z:F1})");
         PrintZone(sender, "start", _startZone, p);
         PrintZone(sender, "end", _endZone, p);
-        return HookResult.Handled;
     }
 
-    [ChatCommand("speed")]
-    public HookResult OnSpeed(ChatCommandContext ctx)
+    [Command("speed")]
+    public void OnSpeed(CCitadelPlayerController caller)
     {
-        if (_speedHud is null) return HookResult.Continue;
-        var pawn = ctx.Controller?.GetHeroPawn();
-        if (pawn is null) return HookResult.Handled;
-        int slot = ctx.Message.SenderSlot;
+        if (_speedHud is null) return;
+        var pawn = caller.GetHeroPawn();
+        if (pawn is null) return;
+        int slot = caller.Slot;
         bool enabled = _speedHud.Toggle(slot, pawn);
         Chat.PrintToChat(slot, $"[{Name}] speed HUD {(enabled ? "enabled" : "disabled")}");
-        return HookResult.Handled;
     }
 
     private void PrintZone(int slot, string label, Zone? zone, System.Numerics.Vector3 p)
