@@ -9,6 +9,7 @@ sources:
   - knowledge-base/raw/notes/2026-04-22-trooper-squad-size-cap.md
   - knowledge-base/raw/notes/2026-04-22-onentityspawned-remove-deferral.md
   - knowledge-base/raw/notes/2026-04-22-citadel-active-lane-bitmask.md
+  - knowledge-base/raw/notes/2026-04-22-deadlock-three-lanes-only.md
   - knowledge-base/raw/notes/2026-04-22-hud-game-announcement.md
   - knowledge-base/raw/notes/2026-04-22-host-api-version-skew.md
   - ../TrooperInvasion/TrooperInvasion.cs
@@ -95,19 +96,35 @@ crashes — see "Friendly-trooper culling" below),
 
 ## Lane gating — ≥ 2 players per active lane
 
-`citadel_active_lane` is a **bitmask** (`DeathmatchPlugin.cs:109` sets
-`4 = 0b0100` for one specific lane; `TagPlugin.cs:90` sets `255` for all).
-`RunWave` writes `(1 << activeLanes) - 1` where `activeLanes =
-Clamp(humans/2, 1, 4)`:
+`citadel_active_lane` accepts **explicit lane IDs OR'd together**, not a
+naive `(1 << N) - 1` bitmask. **Deadlock currently has only 3 lanes**:
+`{1 = Yellow, 4 = Blue, 6 = Purple}`. Green (value `3`) is no longer a
+lane. `RunWave` OR's the first `activeLanes` markers from `{1, 4, 6}`
+where `activeLanes = Clamp(humans/2, 1, 3)`:
 
-| Humans | Active lanes | Bitmask |
-|---|---|---|
-| 1–3 | 1 | 1 (`0b0001`) |
-| 4–5 | 2 | 3 (`0b0011`) |
-| 6–7 | 3 | 7 (`0b0111`) |
-| 8+ | 4 | 15 (`0b1111`) |
+| Humans | Active lanes | Mask | Lanes |
+|---|---|---|---|
+| 1–3 | 1 | `1` | Yellow |
+| 4–5 | 2 | `1\|4 = 5` | Yellow + Blue |
+| 6+ | 3 | `1\|4\|6 = 7` | Yellow + Blue + Purple |
 
 Recomputed every wave, so lane count tracks live joins/leaves.
+
+**Why not `(1 << N) - 1`:** the earlier formula produced mask `3` at
+4 players, which references the defunct Green lane. The spawn pipeline
+silently no-op'd — scheduler kept firing wave timers and printing
+"next in 19s" chat lines but no troopers emerged. Only surfaced at
+exactly 4 players because that was the first transition away from the
+1-lane (Yellow-only) value that 1–3-player play had been pinned at.
+Fix in commit `5382526`; see
+`raw/notes/2026-04-22-deadlock-three-lanes-only.md`.
+
+Reference plugins: `DeathmatchPlugin.cs:109` sets a single lane (value
+`4` = Blue); `TagPlugin.cs:90` sets `255` (all lanes — effectively a
+bitmask of "every possible bit, engine ignores extras"). Our multi-lane
+masks `{5, 7}` sit between these patterns; they work because they
+aren't any single valid lane ID, so the engine treats them as a combined
+bitmask rather than a specific-lane reference.
 
 ## Friendly-trooper culling
 

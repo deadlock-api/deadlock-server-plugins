@@ -8,6 +8,43 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-22] — Deadlock has only 3 lanes; fix TrooperInvasion 4-player wedge
+
+- **Operation:** ingest (bug-fix finding)
+- **Source:** `raw/notes/2026-04-22-deadlock-three-lanes-only.md`
+- **Pages updated:** `plugins/trooper-invasion.md` — rewrote the Lane
+  gating section with the corrected 3-lane model (`{1=Yellow, 4=Blue,
+  6=Purple}`), explicit-marker OR formula, and post-mortem on the
+  `(1 << N) - 1` wedge. Added the new raw note to the sources list.
+- **Key findings:**
+  - **Deadlock currently has 3 lanes, not 4.** Valid `citadel_active_lane`
+    single-lane IDs are `{1, 4, 6}`. Value `3` (Green) is no longer a
+    lane and silently no-ops the spawn pipeline when written.
+  - **Bitmask math `(1 << N) - 1` is wrong for this convar.** It
+    produced mask `3` at 4 players, referencing the defunct Green lane.
+    Scheduler kept running (wave timers fired, "next in 19s" chat lines
+    printed) but zero troopers emerged. Symptom surfaced exactly at
+    4 players because that was the first transition away from the
+    1-lane Yellow-only value.
+  - **Fix:** OR the first `activeLanes` markers from `{1, 4, 6}`, with
+    `activeLanes = Clamp(humans/2, 1, 3)`. Produces masks `{1, 5, 7}`
+    for 1/2/3 lanes — none collide with single-lane IDs, so the engine
+    interprets them as combined bitmasks.
+- **Contradictions flagged (for next lint):**
+  - `raw/notes/2026-04-22-citadel-active-lane-bitmask.md` claims
+    "Deadlock's 4 lanes map to bits `0b0001 / 0b0010 / 0b0100 / 0b1000`"
+    and that `(1 << N) - 1` is a valid "N lanes" mask. **Both wrong** —
+    Deadlock has 3 lanes and the convar takes lane IDs, not bit
+    positions. Raw notes are append-only; correction lives in the new
+    `2026-04-22-deadlock-three-lanes-only.md` note and this log entry.
+  - `Deathmatch.cs:51` has `_laneCycle = { 1, 3, 6 }` with the comment
+    "Yellow, Green, Purple — skip Blue (4)". The value `3` is stale
+    (Green no longer exists) — Deathmatch's lane rotation probably
+    misbehaves on the middle entry. Separate investigation; not touched
+    in this fix.
+- **Commit:** `5382526` (fix(trooper-invasion): use Deathmatch lane IDs
+  to avoid 4-player wedge).
+
 ## [2026-04-22] — TrooperInvasion round-cycle, lane-gating, HUD toasts
 
 - **Operation:** ingest (iteration session)

@@ -236,9 +236,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
     private int ComputeActiveLanes(int humans)
     {
-        // At least 2 players per active lane; clamped to [1, 3] because we
-        // only use 3 of Deadlock's 4 lane IDs (Yellow/Blue/Purple, skip Green
-        // to avoid the value-3 bitmask collision — see LaneBitmask). Examples:
+        // At least 2 players per active lane; clamped to [1, 3] — Deadlock has
+        // only 3 lanes now (Yellow=1, Blue=4, Purple=6). Examples:
         //   1-3 players → 1 lane
         //   4-5 players → 2 lanes
         //   6+ players  → 3 lanes

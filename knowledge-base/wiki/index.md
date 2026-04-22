@@ -5,11 +5,12 @@ created: 2026-04-21
 updated: 2026-04-22
 ---
 
-_Last ingest: 2026-04-22 — TrooperInvasion round-cycling + lane-gating +
-HUD announcements + deletion of match-clock anchor code + event-driven
-empty-server cleanup. Plus reusable findings: `citadel_active_lane`
-bitmask, `CCitadelUserMsg_HudGameAnnouncement` idiom, scheduler
-timer-IHandle tracking pattern._
+_Last ingest: 2026-04-22 — correction: **Deadlock has only 3 lanes now**
+(`{1=Yellow, 4=Blue, 6=Purple}`), not 4. `citadel_active_lane` takes
+OR'd lane IDs, not a `(1<<N)-1` bitmask — the naive formula wedges the
+spawn pipeline at mask `3` (defunct Green). TrooperInvasion 4-player
+wedge fixed by OR'ing `{1, 4, 6}` markers. Prior-day wikis that asserted
+4 lanes / bit-position math are now flagged as superseded._
 
 # Content Catalog
 
