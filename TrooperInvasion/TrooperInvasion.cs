@@ -236,16 +236,24 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
     private int ComputeActiveLanes(int humans)
     {
-        // At least 2 players per active lane; clamped to [1, 4]. Examples:
+        // At least 2 players per active lane; clamped to [1, 3] because we
+        // only use 3 of Deadlock's 4 lane IDs (Yellow/Blue/Purple, skip Green
+        // to avoid the value-3 bitmask collision — see LaneBitmask). Examples:
         //   1-3 players → 1 lane
         //   4-5 players → 2 lanes
-        //   6-7 players → 3 lanes
-        //   8+ players  → 4 lanes (Deadlock map has 4 lanes total)
-        int lanes = Math.Clamp(humans / 2, 1, 4);
+        //   6+ players  → 3 lanes
+        int lanes = Math.Clamp(humans / 2, 1, 3);
         return lanes;
     }
 
-    private static int LaneBitmask(int activeLanes) => (1 << activeLanes) - 1;
+    private static readonly int[] _laneMarkers = { 1, 4, 6 };
+    private static int LaneBitmask(int activeLanes)
+    {
+        int mask = 0;
+        for (int i = 0; i < activeLanes && i < _laneMarkers.Length; i++)
+            mask |= _laneMarkers[i];
+        return mask;
+    }
 
     private int ComputeTrooperCap(int humans)
     {
