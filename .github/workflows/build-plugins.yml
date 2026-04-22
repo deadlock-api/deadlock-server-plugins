@@ -11,20 +11,52 @@ jobs:
     name: Discover plugins
     runs-on: ubuntu-latest
     outputs:
-      plugins: ${{ steps.find.outputs.plugins }}
+      plugins: ${{ steps.compute.outputs.plugins }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Find plugin projects
-        id: find
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            force_all:
+              - '.github/workflows/build-plugins.yml'
+              - 'Directory.Build.props'
+              - 'Directory.Build.targets'
+              - 'global.json'
+              - 'NuGet.config'
+            Deathmatch:
+              - 'Deathmatch/**'
+            LockTimer:
+              - 'LockTimer/**'
+            StatusPoker:
+              - 'StatusPoker/**'
+
+      - name: Compute plugin matrix
+        id: compute
+        env:
+          FORCE_ALL: ${{ steps.filter.outputs.force_all }}
+          CHANGES: ${{ steps.filter.outputs.changes }}
         run: |
-          plugins=$(find . -name '*.csproj' -printf '%h\n' | sed 's|^\./||' | sort -u | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          set -euo pipefail
+          all_plugins=$(find . -name '*.csproj' -printf '%h\n' | sed 's|^\./||' | sort -u \
+            | jq -R -s -c 'split("\n") | map(select(. != ""))')
+
+          if [[ "$FORCE_ALL" == "true" ]]; then
+            plugins="$all_plugins"
+          else
+            tops=$(echo "$CHANGES" | jq -c '[.[] | select(. != "force_all")]')
+            plugins=$(echo "$all_plugins" | jq -c --argjson tops "$tops" \
+              '[.[] | select((. | split("/")[0]) as $top | $tops | index($top))]')
+          fi
+
           echo "plugins=$plugins" >> "$GITHUB_OUTPUT"
-          echo "Found plugins: $plugins"
+          echo "Building: $plugins"
 
   build:
     name: Build ${{ matrix.plugin }}
     needs: discover
+    if: needs.discover.outputs.plugins != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,7 +68,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: Download latest Deadworks release
         run: |

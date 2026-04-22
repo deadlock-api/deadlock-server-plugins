@@ -5,27 +5,76 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore:
+      - 'knowledge-base/**'
+      - '**.md'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.gitignore'
+      - '.github/workflows/build-plugins.yml'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'knowledge-base/**'
+      - '**.md'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.gitignore'
+      - '.github/workflows/build-plugins.yml'
 
 jobs:
   discover:
     name: Discover gamemodes
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.parse.outputs.matrix }}
+      matrix: ${{ steps.compute.outputs.matrix }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Parse gamemodes
-        id: parse
+      - uses: dorny/paths-filter@v4
+        id: filter
+        if: github.event_name != 'workflow_dispatch' && github.ref_type != 'tag'
+        with:
+          filters: |
+            force_all:
+              - '.github/workflows/docker-gamemodes.yml'
+              - 'gamemodes.json'
+            Deathmatch:
+              - 'Deathmatch/**'
+            LockTimer:
+              - 'LockTimer/**'
+            StatusPoker:
+              - 'StatusPoker/**'
+
+      - name: Compute gamemode matrix
+        id: compute
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          FORCE_ALL: ${{ steps.filter.outputs.force_all }}
+          CHANGES: ${{ steps.filter.outputs.changes }}
         run: |
-          matrix=$(jq -c '[keys[] as $k | {gamemode: $k, plugins: .[$k]}]' gamemodes.json)
+          set -euo pipefail
+          all_matrix=$(jq -c '[keys[] as $k | {gamemode: $k, plugins: .[$k]}]' gamemodes.json)
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$REF_TYPE" == "tag" || "$FORCE_ALL" == "true" ]]; then
+            matrix="$all_matrix"
+          else
+            changed=$(echo "$CHANGES" | jq -c '[.[] | select(. != "force_all")]')
+            matrix=$(jq -c --argjson changed "$changed" '
+              [keys[] as $k
+                | {gamemode: $k, plugins: .[$k]}
+                | select(.plugins | any(. as $p | $changed | index($p)))]
+            ' gamemodes.json)
+          fi
+
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "Gamemodes: $matrix"
+          echo "Building: $matrix"
 
   build-base:
     name: Build native layer (shared cache)
+    needs: discover
+    if: needs.discover.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,6 +109,7 @@ jobs:
   build:
     name: Build ${{ matrix.entry.gamemode }}
     needs: [discover, build-base]
+    if: needs.discover.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
