@@ -1,6 +1,14 @@
 x-base: &base
   env_file: .env
   restart: unless-stopped
+  labels:
+    # Watchtower runs this hook before stopping the container. The script
+    # exits 0 only when the server is empty or the 30-minute grace fires,
+    # otherwise non-zero so watchtower skips this cycle. pre-update-timeout
+    # is in MINUTES and bounds a single hook invocation — the multi-cycle
+    # 30-min budget is enforced by the script itself via /tmp/wt-update-since.
+    com.centurylinklabs.watchtower.lifecycle.pre-update: /usr/local/bin/wait-for-empty.sh
+    com.centurylinklabs.watchtower.lifecycle.pre-update-timeout: "1"
   ulimits:
     nofile:
       soft: 1048576
@@ -61,6 +69,7 @@ services:
       - dotnet-cache:/opt/dotnet-cache
       - gamedata-normal:/home/steam/server
       - compatdata-normal:/home/steam/.steam/steam/steamapps/compatdata
+      - ./scripts/wait-for-empty.sh:/usr/local/bin/wait-for-empty.sh:ro
 
   lock-timer:
     <<: *base
@@ -79,6 +88,7 @@ services:
       - dotnet-cache:/opt/dotnet-cache
       - gamedata-lock-timer:/home/steam/server
       - compatdata-lock-timer:/home/steam/.steam/steam/steamapps/compatdata
+      - ./scripts/wait-for-empty.sh:/usr/local/bin/wait-for-empty.sh:ro
 
   deathmatch:
     <<: *base
@@ -97,6 +107,7 @@ services:
       - dotnet-cache:/opt/dotnet-cache
       - gamedata-deathmatch:/home/steam/server
       - compatdata-deathmatch:/home/steam/.steam/steam/steamapps/compatdata
+      - ./scripts/wait-for-empty.sh:/usr/local/bin/wait-for-empty.sh:ro
 
   trooper-invasion:
     <<: *base
@@ -120,6 +131,7 @@ services:
       - dotnet-cache:/opt/dotnet-cache
       - gamedata-trooper-invasion:/home/steam/server
       - compatdata-trooper-invasion:/home/steam/.steam/steam/steamapps/compatdata
+      - ./scripts/wait-for-empty.sh:/usr/local/bin/wait-for-empty.sh:ro
 
 volumes:
   proton:

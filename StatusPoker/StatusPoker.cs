@@ -20,6 +20,7 @@ public class StatusPoker : DeadworksPluginBase
     private string _ip = null!;
     private ushort _port;
     private int _intervalSeconds;
+    private string _playerCountFile = null!;
 
     public override void OnLoad(bool isReload)
     {
@@ -30,10 +31,12 @@ public class StatusPoker : DeadworksPluginBase
         _ip = EnvRequired("IP");
         _port = ushort.Parse(EnvRequired("PORT"));
         _intervalSeconds = int.Parse(Env("INTERVAL_SECONDS", "30"));
+        _playerCountFile = Env("PLAYER_COUNT_FILE", "/tmp/player_count");
 
         Console.WriteLine($"[{Name}] {(isReload ? "Reloaded" : "Loaded")} " +
             $"(server={_serverId}, mode={_gameMode}, region={_region}, " +
-            $"endpoint={_ip}:{_port}, interval={_intervalSeconds}s)");
+            $"endpoint={_ip}:{_port}, interval={_intervalSeconds}s, " +
+            $"count-file={_playerCountFile})");
     }
 
     public override void OnStartupServer()
@@ -70,6 +73,9 @@ public class StatusPoker : DeadworksPluginBase
 
     private async Task SendPoke(CancellationToken ct)
     {
+        var playerCount = GetCurrentPlayerCount();
+        WritePlayerCountFile(playerCount);
+
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_apiBase}/v1/servers/status")
@@ -82,7 +88,7 @@ public class StatusPoker : DeadworksPluginBase
                     ip = _ip,
                     port = _port,
                     hostname = ConVar.Find("hostname")?.GetString() ?? "",
-                    current_player_count = (uint)GetCurrentPlayerCount(),
+                    current_player_count = (uint)playerCount,
                 }),
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _secret);
@@ -97,6 +103,22 @@ public class StatusPoker : DeadworksPluginBase
     }
 
     private static int GetCurrentPlayerCount() => Players.GetAll().Count();
+
+    // Atomic write so the pre-update hook (watchtower) never reads a torn value.
+    private void WritePlayerCountFile(int count)
+    {
+        try
+        {
+            var tmp = _playerCountFile + ".tmp";
+            File.WriteAllText(tmp, count.ToString() + "\n");
+            File.Move(tmp, _playerCountFile, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{Name}] Failed to write player count file " +
+                $"({_playerCountFile}): {ex.Message}");
+        }
+    }
 
     private static readonly (int Id, string[] Aliases)[] RegionAliases =
     {
