@@ -1,10 +1,47 @@
 x-base: &base
   env_file: .env
-  volumes: &base-volumes
-    - proton:/opt/proton
-    - gamefiles:/opt/gamefiles
-    - dotnet-cache:/opt/dotnet-cache
   restart: unless-stopped
+  ulimits:
+    nofile:
+      soft: 1048576
+      hard: 1048576
+    memlock: -1
+    nproc: 65535
+    rtprio: 99
+  cap_add:
+    - SYS_NICE
+    - IPC_LOCK
+  devices:
+    - /dev/ntsync:/dev/ntsync
+  sysctls:
+    net.ipv4.tcp_fastopen: "3"
+  tmpfs:
+    - /tmp:size=2g,mode=1777
+    - /run:size=256m,mode=1777
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+  oom_score_adj: -500
+  environment: &base-env
+    WINEESYNC: "0"
+    WINEFSYNC: "0"
+    PROTON_USE_NTSYNC: "1"
+    WINE_DISABLE_FAST_SYNC: "0"
+    WINEPREFIX: /home/steam/.wine
+    WINEARCH: win64
+    WINEDEBUG: "-all"
+    STAGING_WRITECOPY: "1"
+    STAGING_SHARED_MEMORY: "1"
+    DXVK_HUD: "0"
+    DXVK_LOG_LEVEL: "none"
+    DXVK_STATE_CACHE: "0"
+    PROTON_NO_ESYNC: "1"
+    PROTON_NO_FSYNC: "1"
+    PROTON_LOG: "0"
+    LANG: C.UTF-8
+    LC_ALL: C.UTF-8
 
 services:
   normal:
@@ -14,9 +51,10 @@ services:
       - "27015:27015/udp"
       - "27015:27015/tcp"
     environment:
-      - SERVER_PORT=27015
-      - DEADWORKS_ENV_PORT=27015
-      - DEADWORKS_ENV_HOSTNAME=24/7 Deadlock | Vanilla
+      <<: *base-env
+      SERVER_PORT: 27015
+      DEADWORKS_ENV_PORT: 27015
+      DEADWORKS_ENV_HOSTNAME: 24/7 Deadlock | Vanilla
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
@@ -31,9 +69,10 @@ services:
       - "27016:27016/udp"
       - "27016:27016/tcp"
     environment:
-      - SERVER_PORT=27016
-      - DEADWORKS_ENV_PORT=27016
-      - DEADWORKS_ENV_HOSTNAME=24/7 Lock Timer | Zone-Based Speedrun
+      <<: *base-env
+      SERVER_PORT: 27016
+      DEADWORKS_ENV_PORT: 27016
+      DEADWORKS_ENV_HOSTNAME: 24/7 Lock Timer | Zone-Based Speedrun
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
@@ -48,9 +87,10 @@ services:
       - "27017:27017/udp"
       - "27017:27017/tcp"
     environment:
-      - SERVER_PORT=27017
-      - DEADWORKS_ENV_PORT=27017
-      - DEADWORKS_ENV_HOSTNAME=24/7 TDM | Rank-Balanced | Max Abilities + Infinite Gold | 2s Respawn | Rotating Lanes
+      <<: *base-env
+      SERVER_PORT: 27017
+      DEADWORKS_ENV_PORT: 27017
+      DEADWORKS_ENV_HOSTNAME: 24/7 TDM | Rank-Balanced | Max Abilities + Infinite Gold | 2s Respawn | Rotating Lanes
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
@@ -65,9 +105,10 @@ services:
       - "27018:27018/udp"
       - "27018:27018/tcp"
     environment:
-      - SERVER_PORT=27018
-      - DEADWORKS_ENV_PORT=27018
-      - DEADWORKS_ENV_HOSTNAME=24/7 Trooper Invasion | Co-op PvE | Defend the Patron
+      <<: *base-env
+      SERVER_PORT: 27018
+      DEADWORKS_ENV_PORT: 27018
+      DEADWORKS_ENV_HOSTNAME: 24/7 Trooper Invasion | Co-op PvE | Defend the Patron
     volumes:
       - proton:/opt/proton
       - gamefiles:/opt/gamefiles
