@@ -566,6 +566,21 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         }
         SamplePlayerCount(HumanPlayerCount());
 
+        // One-shot welcome. The hostname advertises the mode but that's the
+        // only cue a first-time joiner gets in-game — anchor them in the
+        // current round/wave and point at !help. Deferred a tick so the chat
+        // UI is settled before the lines land (same reasoning as DeferredSpawnRitual).
+        int welcomeSlot = controller.Slot;
+        Timer.Once(1.Ticks(), () =>
+        {
+            Chat.PrintToChat(welcomeSlot, "[TI] Welcome to Trooper Invasion — all humans defend the Amber Patron vs engine-spawned troopers.");
+            Chat.PrintToChat(welcomeSlot,
+                _wavesActive && _waveNum > 0
+                    ? $"[TI] Currently Round {_roundNum} Wave {_waveNum}/{RoundLength} — kill troopers for gold, don't let the Patron die."
+                    : "[TI] First wave begins shortly — kill troopers for gold, don't let the Patron die.");
+            Chat.PrintToChat(welcomeSlot, "[TI] Type !help for commands (!hero, !voteskip, !stuck, !wave, …).");
+        });
+
         // Auto-arm wave scheduler on first-player join. Idempotent: ArmWaves no-ops
         // if already active or mode-over.
         ArmWaves();
