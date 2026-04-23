@@ -4,6 +4,9 @@ type: concept
 sources:
   - raw/notes/2026-04-22-deadworks-plugin-api-surface.md
   - raw/notes/2026-04-23-plugin-bus.md
+  - raw/notes/2026-04-23-entity-io-api.md
+  - raw/notes/2026-04-23-trace-api.md
+  - raw/notes/2026-04-23-soundevent-builder.md
   - ../deadworks/managed/DeadworksManaged.Api/
 related:
   - "[[deadworks-runtime]]"
@@ -15,8 +18,11 @@ related:
   - "[[plugin-config]]"
   - "[[gameevent-source-generator]]"
   - "[[plugin-bus]]"
+  - "[[entity-io]]"
+  - "[[trace-api]]"
   - "[[examples-index]]"
   - "[[deadworks-scan-2026-04-22]]"
+  - "[[deadworks-scan-2026-04-23]]"
 created: 2026-04-22
 updated: 2026-04-23
 confidence: high
@@ -53,7 +59,7 @@ All hook methods on `IDeadworksPlugin` have default no-op implementations
 | `ParticleSystem` | `CParticleSystem.Create(path).AtPosition(v).StartActive(true).Spawn()` |
 | `Precache` | `AddResource(path)`, `AddHero(Heroes.X)` — call from `OnPrecacheResources` |
 | `Server` | `MapName`, `ExecuteCommand`, `ClientCommand`, `EnumerateConVars`, `EnumerateConCommands`, `AddSearchPath`, `SetAddons`, `AddEngineLogListener` |
-| `Sounds`, `SoundEvent` | `Sounds.Play`, `Sounds.PlayAt`; v0.4.5 adds single-player target path |
+| `Sounds`, `SoundEvent` | `Sounds.Play`, `Sounds.PlayAt` helpers; **`SoundEvent` builder** (fluent `SetFloat/SetUInt32/SetFloat3/…` + `.Emit(RecipientFilter) → GUID`, `SetParams(guid, …)`, `SoundEvent.Stop(guid, …)`, `SoundEvent.StopByName(name, src, …)`). Wire format is SOS-packed-params; field names are MurmurHash2-lowercased. Added upstream `c0f977b` (2026-04-22). |
 | `Utf8` | `Utf8.Encode(string, Span<byte>)`, `Utf8.Size(string)` — stackalloc-friendly UTF-8 |
 | `MurmurHash2` | hash helper |
 | `Damage` | `CTakeDamageInfo` struct; `TakeDamageFlags` |
@@ -68,10 +74,10 @@ All hook methods on `IDeadworksPlugin` have default no-op implementations
 | `Config/` | [[plugin-config]] — `[PluginConfig]`, `IConfig.Validate`, hot-reload |
 | `Entities/` | [[schema-accessors]] — entity wrappers, schema access, `Players`, `EntityData<T>` |
 | `Enums/` | game constants (see enum reference below) |
-| `Events/` | [[events-surface]] — event payload types + game-event typed classes |
+| `Events/` | [[events-surface]] — event payload types + game-event typed classes; also [[entity-io]] (`EntityIO.HookOutput/HookInput` for mapper-wired entity I/O) |
 | `NetMessages/` | [[netmessages-api]] — protobuf message send/hook |
 | `Timer/` | [[timer-api]] — per-plugin timer service |
-| `Trace/` | `TraceSystem` — VPhys2 raycast / shape cast (not used in any example plugin) |
+| `Trace/` | [[trace-api]] — VPhys2 raycast / shape cast (line, sphere, hull, capsule, mesh). Silent no-op when not ready; not currently used by any plugin |
 
 ## Enum reference bundle
 

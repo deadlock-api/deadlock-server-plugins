@@ -5,21 +5,34 @@ created: 2026-04-21
 updated: 2026-04-23
 ---
 
-_Last ingest: 2026-04-23 — **PluginBus catalogued** (new in upstream
+_Last ingest: 2026-04-23 — **2nd deadworks scan** — catalogued three
+plugin-facing API surfaces the 2026-04-22 scan missed plus one fix from
+the 2026-04-14 upstream cluster. New pages: [[entity-io]]
+(`EntityIO.HookOutput`/`HookInput` for mapper-wired entity I/O; no
+auto-cleanup on unload — **always dispose the handle in `OnUnload`**),
+[[trace-api]] (VPhys2 ray / sphere / hull / capsule / mesh casts via
+`Trace.Ray` + `SimpleTrace`; silent no-op when `PhysicsQueryPtr`
+not ready; filter vtable gotcha). Updated pages: [[deadworks-plugin-loader]]
+(native-DLL resolution via `LoadUnmanagedDll` override in
+`PluginLoadContext`, commit `f9a876c` — enables plugins bundling
+native deps like SQLite's `e_sqlite3`); [[deadworks-runtime]]
+(corrected SHA `deb8ff2` → `224d660` for telemetry rework, full env-var
+reference table for `DEADWORKS_TELEMETRY_ENABLED` /
+`DEADWORKS_OTLP_ENDPOINT` / `_PROTOCOL` / `_SERVICE_NAME` / `_LOG_LEVEL`;
+env overrides JSONC); [[plugin-api-surface]] (proper `SoundEvent`
+builder description — beyond `Sounds.Play/PlayAt` there's full
+`SetFloat/SetUInt32/SetFloat3`, GUID-addressable `SetParams`/`Stop`,
+`StopByName`; added upstream `c0f977b` 2026-04-22)._
+
+_Prev ingest: 2026-04-23 — **PluginBus catalogued** (new in upstream
 `../deadworks/`): static `DeadworksManaged.Api.PluginBus` for
 plugin-to-plugin **events** (fire-and-forget, max-wins `HookResult`
 aggregation) and **queries** (request/response, collect-all).
-Synchronous, auto-cleaned on plugin unload, names compared ordinally
-(`plugin_name:event_name` convention). `[EventHandler]` /
-`[QueryHandler]` attribute scan; stack-walk resolves `SenderPluginName`.
-Live constraint: typed `Subscribe<T>` / `HandleQuery<…>` will NOT match
-across plugins unless the contract type lives in
-`DeadworksManaged.Api` or a shared DLL (per-plugin `AssemblyLoadContext`
-→ distinct `Type` identity). Diagnostics via `dw_pluginbus` console
-command (subscription + handler lists, 60-second ring buffers, "did you
-mean" suggestions). Not yet used by any plugin in this repo._
+Synchronous, auto-cleaned on plugin unload, names compared ordinally.
+Diagnostics via `dw_pluginbus`. Type-identity caveat across plugin
+ALCs documented._
 
-_Prev ingest: 2026-04-23 — **`citadel_kick_disconnected_players`
+_Prev-prev ingest: 2026-04-23 — **`citadel_kick_disconnected_players`
 catalogued**: engine-native concommand ("Clear out all players who
 aren't connected, removing them from any teams") added to
 [[deadlock-game]]. Candidate replacement for the manual
@@ -31,16 +44,10 @@ TeamChangeBlock) have no `OnClientDisconnect` and are not applicable.
 Safest invocation = `sv_cheats 1 / citadel_kick_disconnected_players /
 sv_cheats 0` via `Server.ExecuteCommand`. Untested._
 
-_Prev-prev ingest: 2026-04-23 — **TrooperInvasion boss waves removed**:
-`CBaseEntity.CreateByDesignerName("npc_trooper_boss") + Spawn()` with
-null `CEntityKeyValues` crashed the server natively on the first boss
-spawn. Lane-AI NPCs need `m_iLane` + squad + navmesh region wired in via
-KV at Spawn time (the real path is `CCitadelTrooperSpawnGameSystem`
-driven by `info_trooper_spawn` / `info_super_trooper_spawn`). Managed
-spawn is only safe for point entities with explicit KV
-(`CPointWorldText`, `ParticleSystem`). Reach-for-next-time pattern
-documented: native `citadel_spawn_trooper x,y,z boss` bracketed with
-`sv_cheats 1 / 0`._
+_Older ingests: TrooperInvasion boss waves removed (native crash on
+`CreateByDesignerName("npc_trooper_boss")`, KV required); session
+transcripts ingest; deadworks v0.4.5 release notes; first deep
+deadworks scan._
 
 # Content Catalog
 
@@ -98,6 +105,12 @@ what to load — keep it concise and current.
 - [[plugin-bus]] — `PluginBus` plugin-to-plugin events + queries;
   `[EventHandler]` / `[QueryHandler]`; `dw_pluginbus` diagnostics;
   type-identity gotcha across plugin ALCs
+- [[entity-io]] — `EntityIO.HookOutput/HookInput` for mapper-wired
+  entity I/O; no auto-cleanup on unload, exact-designer-name match,
+  ordinal case-sensitive
+- [[trace-api]] — VPhys2 ray / sphere / hull / capsule / mesh casts;
+  `Trace.Ray` high-level entrypoint, `SimpleTrace*` / `TraceShape`
+  lower-level; silent no-op when physics not ready
 - [[schema-accessors]] — `SchemaAccessor<T>` with UTF-8 literals, Players,
   NativeEntityFactory, `EntityData<T>` auto-cleanup
 - [[netmessages-api]] — `NetMessages.Send/Hook`, `[NetMessageHandler]`,
@@ -123,6 +136,9 @@ what to load — keep it concise and current.
   port revert to 27067, `Slot`/`HeroID`/`AddItem(enhanced)` additions
 - [[deadworks-scan-2026-04-22]] — deep scan of `../deadworks/` API surface,
   example plugins, and native layout (10 raw notes)
+- [[deadworks-scan-2026-04-23]] — follow-up scan: `LoadUnmanagedDll`
+  override, telemetry env-var reference, EntityIO, Trace, `SoundEvent`
+  builder (5 raw notes)
 
 ## Comparisons
 
@@ -130,6 +146,7 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 29 (index, log, overview, glossary, 3 source,
-5 plugin, 5 concept, 12 entity, 2 operation)
-**Last ingest:** 2026-04-23 — PluginBus entity page
+**Total wiki pages:** 32 (index, log, overview, glossary, 4 source,
+5 plugin, 5 concept, 14 entity, 2 operation)
+**Last ingest:** 2026-04-23 — 2nd deadworks scan (entity-io, trace-api,
+plugin-loader LoadUnmanagedDll, telemetry env vars, SoundEvent builder)

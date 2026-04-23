@@ -9,11 +9,13 @@ sources:
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-d416f1ea.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deadworks-ec2918a5.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deathmatch-3636296d.md
+  - raw/notes/2026-04-23-plugin-native-dll-resolution.md
 related:
   - "[[deadworks-runtime]]"
   - "[[plugin-build-pipeline]]"
+  - "[[deadworks-scan-2026-04-23]]"
 created: 2026-04-21
-updated: 2026-04-21
+updated: 2026-04-23
 confidence: high
 ---
 
@@ -122,10 +124,41 @@ on the `DeadworksManaged.Api` reference — so only the host's copy loads
 at runtime. See [[plugin-build-pipeline]] for the same pattern applied to
 `Google.Protobuf`.
 
-Upstream commit `211583e` ("fix: resolve native DLLs for plugins in
-isolated AssemblyLoadContext") added explicit native-DLL resolution —
-plugins running in an isolated ALC need special handling for `[DllImport]`
-resolution (deadworks-530007be).
+## Native-DLL resolution for plugins
+
+Upstream commit `f9a876c` ("fix: resolve native DLLs for plugins in
+isolated AssemblyLoadContext", 2026-04-14; canonical SHA on `main` —
+the equivalent pre-rebase SHA `211583e` is unreachable from current
+branches) adds a `LoadUnmanagedDll` override to `PluginLoadContext`
+(`PluginLoader.cs:39-48`):
+
+```csharp
+protected override nint LoadUnmanagedDll(string unmanagedDllName)
+{
+    var path = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+    if (path != null)
+        return NativeLibrary.Load(path);
+    return nint.Zero;
+}
+```
+
+This uses the plugin's own `AssemblyDependencyResolver` — i.e., the
+plugin's `deps.json` — so plugins can bundle native dependencies in
+`runtimes/<rid>/native/` and they'll resolve at `[DllImport]` time.
+The motivating case in the commit message: `Microsoft.Data.Sqlite` /
+`e_sqlite3.dll`.
+
+Before this fix, the CLR's default unmanaged resolver only probed the
+process directory (`…/game/bin/win64/`), so plugins with native deps
+silently failed with `DllNotFoundException` on first use.
+
+Managed and native resolution differ:
+
+- **Managed** (`Load`): shared-host assemblies first (identity types
+  like `IDeadworksPlugin`), then the per-plugin resolver.
+- **Native** (`LoadUnmanagedDll`): per-plugin resolver only — there is
+  no "shared native" concept. Each plugin that needs the same
+  `e_sqlite3.dll` ships its own copy.
 
 ## Hot reload
 

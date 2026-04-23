@@ -2,6 +2,7 @@
 title: Deadworks runtime
 type: concept
 sources:
+  - raw/notes/2026-04-23-telemetry-env-vars.md
   - knowledge-base/raw/articles/deadworks-0.4.5-release.md
   - knowledge-base/raw/notes/2026-04-22-deadworks-command-attribute.md
   - knowledge-base/raw/notes/2026-04-22-deadworks-events-surface.md
@@ -49,7 +50,7 @@ related:
   - "[[gameevent-source-generator]]"
   - "[[examples-index]]"
 created: 2026-04-21
-updated: 2026-04-22
+updated: 2026-04-23
 confidence: high
 ---
 
@@ -351,22 +352,54 @@ Other managed classes: `ConCommandManager`, `ConfigManager`,
 `PluginRegistrationTracker`, `PluginStateManager`, `ScheduledTask`,
 `ServerBrowser`.
 
-## Telemetry and logging (upstream `deb8ff2`)
+## Telemetry and logging (upstream `224d660`)
+
+Canonical SHA on `main` is `224d660` ("add structured logging, metrics,
+and traces via Microsoft.Extensions.Logging + OpenTelemetry",
+2026-04-14). A pre-rebase copy of the same commit at `deb8ff2` exists
+as a dangling object but is unreachable from any branch.
 
 - Structured logging + OpenTelemetry via `Microsoft.Extensions.Logging`.
-- Dual-sink: `NativeEngineLoggerProvider` (writes to native engine logger)
-  + OTLP.
-- Per-plugin `ILogger` via `LogResolver` / `PluginLoggerRegistry`.
-- 19 metrics on `Meter("Deadworks.Server")`.
-- `ActivitySource` traces on lifecycle.
-- All gated by `DEADWORKS_*` env vars; off by default. Enable with
-  `DEADWORKS_TELEMETRY_ENABLED=true` (deathmatch-c51730eb).
+- Dual-sink: `NativeEngineLoggerProvider` (always added — writes to the
+  game console via unmanaged callback) + OTLP log exporter (only when
+  telemetry is enabled).
+- Per-plugin `ILogger` via `LogResolver` / `PluginLoggerRegistry`;
+  category name is `Plugin.{plugin.Name}`. Accessed as
+  `this.Logger` on `DeadworksPluginBase`. Throws if accessed outside
+  `OnLoad..OnUnload`.
+- 19 metric instruments on `Meter("Deadworks.Server")` covering plugin
+  lifecycle, player counts, frame duration, timer health, heartbeat,
+  event dispatch, chat, and commands.
+- `ActivitySource("Deadworks.Server")` traces on **infrequent**
+  lifecycle events only — never per-frame.
 - Migrated `Console.WriteLine` → `ILogger` across managed codebase.
-- The new `managed/Telemetry/` dir includes `DeadworksMetrics.cs`,
-  `DeadworksTelemetry.cs`, `DeadworksTracing.cs`,
-  `NativeEngineLoggerProvider.cs`, `NativeLogCallback.cs`,
-  `PluginLoggerRegistry.cs`. See `managed/DeadworksManaged.Api/Logging/LogResolver.cs`
-  (deadworks-4881cd7a).
+- `NativeEngineLogger` formats as `[{category}] {prefix}: {message}`
+  where prefix maps `Trace→trce`, `Debug→dbug`, `Information→info`,
+  `Warning→warn`, `Error→fail`, `Critical→crit`.
+
+### Config surface
+
+All settings under `telemetry:` block in `deadworks.jsonc`. Env vars
+**override** JSONC values. Defaults all off / safe:
+
+| Env var | JSONC key | Default | Notes |
+|---------|-----------|---------|-------|
+| `DEADWORKS_TELEMETRY_ENABLED` | `enabled` | `false` | master gate |
+| `DEADWORKS_OTLP_ENDPOINT` | `otlp_endpoint` | `http://localhost:4317` | |
+| `DEADWORKS_OTLP_PROTOCOL` | `otlp_protocol` | `grpc` | or `http/protobuf` |
+| `DEADWORKS_SERVICE_NAME` | `service_name` | `deadworks-server` | |
+| `DEADWORKS_LOG_LEVEL` | `log_level` | `Information` | standard `LogLevel` names |
+
+JSONC-only (no env override): `export_interval_ms=15000`,
+`enable_traces=true`, `enable_metrics=true`, `trace_sampling_ratio=1.0`
+(values `<1.0` wire `TraceIdRatioBasedSampler`).
+
+The new `managed/Telemetry/` dir includes `DeadworksMetrics.cs`,
+`DeadworksTelemetry.cs`, `DeadworksTracing.cs`,
+`NativeEngineLoggerProvider.cs`, `NativeLogCallback.cs`,
+`PluginLoggerRegistry.cs`. See
+`managed/DeadworksManaged.Api/Logging/LogResolver.cs` for the
+plugin-facing resolver indirection.
 
 ## Env-var passthrough for plugins
 

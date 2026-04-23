@@ -8,6 +8,107 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-23] — 2nd deadworks scan (EntityIO, Trace, SoundEvent, native-DLL, telemetry)
+
+- **Operation:** ingest (second scan pass on upstream `../deadworks/`)
+- **Source:** user-requested scan of `../deadworks/` for knowledge not
+  yet covered in the wiki. Produced 5 raw notes:
+  - `raw/notes/2026-04-23-plugin-native-dll-resolution.md`
+  - `raw/notes/2026-04-23-telemetry-env-vars.md`
+  - `raw/notes/2026-04-23-entity-io-api.md`
+  - `raw/notes/2026-04-23-trace-api.md`
+  - `raw/notes/2026-04-23-soundevent-builder.md`
+- **Pages created (3):**
+  - `sources/deadworks-scan-2026-04-23.md` — source summary listing
+    commits since last scan, what this pass covered, and wiki
+    corrections applied.
+  - `entities/entity-io.md` — `EntityIO.HookOutput` / `HookInput`
+    plugin-facing API. `EntityOutputEvent` / `EntityInputEvent` shapes,
+    `"{designerName}:{outputName}"` ordinal-case-sensitive key,
+    snapshot-based lock-free dispatch, exception isolation. **Key
+    gotcha documented: no auto-cleanup on plugin unload** — handles
+    must be disposed in `OnUnload` or dispatch crashes into a released
+    ALC. Exact-match (no wildcards) at hook-registration. Not
+    currently used by any plugin in this repo.
+  - `entities/trace-api.md` — VPhys2 `Trace` API. Three entrypoints
+    (`Ray`, `SimpleTrace`/`SimpleTraceAngles`, `TraceShape`),
+    `Ray_t` union with 5 shape variants, `CGameTrace` / `TraceResult`,
+    `HitEntityByDesignerName`, silent no-op when
+    `NativeInterop.TraceShapeFn == 0`, `CTraceFilter` vtable gotcha
+    (zero-vtable filter → engine crash unless `EnsureValid` paper-overs).
+- **Pages updated (3):**
+  - `entities/deadworks-plugin-loader.md` — replaced paragraph on
+    upstream `211583e` (unreachable from `main`) with full section
+    describing the `LoadUnmanagedDll` override on canonical SHA
+    `f9a876c` (2026-04-14): uses per-plugin
+    `AssemblyDependencyResolver.ResolveUnmanagedDllToPath`, enables
+    plugins bundling native deps (e.g. `Microsoft.Data.Sqlite` /
+    `e_sqlite3`). Managed vs native resolution differ: managed has
+    shared-host fast path; native does not. Frontmatter bumped
+    (`updated: 2026-04-23`, added new raw note + cross-link).
+  - `concepts/deadworks-runtime.md` — Telemetry section heading
+    updated from `deb8ff2` to `224d660` (canonical main-branch SHA;
+    `deb8ff2` exists but is unreachable). Expanded env-var /
+    JSONC-key reference table (`DEADWORKS_TELEMETRY_ENABLED`,
+    `_OTLP_ENDPOINT`, `_OTLP_PROTOCOL`, `_SERVICE_NAME`, `_LOG_LEVEL`),
+    noted env overrides JSONC, listed JSONC-only keys, documented
+    the `NativeEngineLogger` prefix mapping (`trce`/`dbug`/`info`/
+    `warn`/`fail`/`crit`).
+  - `concepts/plugin-api-surface.md` — Sounds/SoundEvent row rewritten
+    to describe the builder API properly (was one line saying
+    "v0.4.5 adds single-player target path"); Trace/ row links to new
+    `[[trace-api]]` page; Events/ row links to `[[entity-io]]` for
+    mapper-wired I/O. Frontmatter bumped with new sources + related
+    links.
+- **Index + log updated:** two new entity pages + one new source
+  summary added to `wiki/index.md`; last-ingest blurb rewritten; page
+  total bumped 29 → 32.
+- **Key findings (cross-cutting):**
+  - **Prior wiki cites unreachable SHAs.** `deb8ff2` (runtime
+    telemetry) and `211583e` (plugin-loader native-DLL fix) both exist
+    as git objects but are not reachable from `main`. Canonical SHAs
+    are `224d660` and `f9a876c`. Citations still resolve via
+    `git rev-parse`, so they're not broken — just non-canonical.
+    Corrected both. The pre-rebase SHAs likely came from an early
+    ingest of PR branches.
+  - **EntityIO is the only plugin-facing hook system without
+    auto-cleanup.** Timers, ChatCommands, PluginBus events/queries,
+    NetMessage hooks all get cleaned up via
+    `PluginRegistrationTracker` / context-based owner resolution /
+    stack-walk. `PluginLoader.EntityIO.cs` has no owner tracking —
+    plugins MUST dispose their `IHandle` in `OnUnload`. Flagged in
+    the new entity page.
+  - **Trace API works end-to-end.** The wiki previously wrote it off
+    as "not used in any example plugin"; closer read shows it's a
+    complete VPhys2 surface (line/sphere/hull/capsule/mesh, simple
+    LOS checks, entity-filtered casts). Silent no-op fallback means
+    it's safe to wire up eagerly; just won't do anything until the
+    physics query system is ready post-map-load.
+  - **SoundEvent builder has GUID-addressable lifecycle.** `.Emit()`
+    returns a `uint GUID` that can be used later with `SetParams` or
+    `Stop`/`StopByName`. Field names are MurmurHash2-lowercased with
+    specific seeds (`SosHashSeeds.FieldName` / `.SoundeventName`).
+    Previously described as just `Play`/`PlayAt` helpers.
+  - **Plugin native-DLL resolution uses only the per-plugin resolver.**
+    There is no "shared native" concept — each plugin ships its own
+    copy of `e_sqlite3.dll` if multiple want SQLite. Fine in practice
+    since `runtimes/<rid>/native/` is per-plugin anyway.
+- **Contradictions reconciled:**
+  - `deadworks-runtime` telemetry section's `deb8ff2` → `224d660`.
+  - `deadworks-plugin-loader` native-DLL paragraph's `211583e` →
+    `f9a876c`, plus it was under the "Shared assemblies" section and
+    didn't actually describe what the fix did — moved out and
+    expanded.
+- **Scope NOT covered in this pass:** `launcher/` (Tauri app),
+  `DeadworksManaged.Tests/` (still deferred), deep re-read of
+  `docker/entrypoint.sh` (ops pages already covered the changes), and
+  the PluginBus commits (already ingested on 2026-04-23).
+- **Candidate next ingest:** Not urgent, but the 2026-04-22 scan
+  summary's "single-player target path" line on Sounds remains in
+  `deadworks-scan-2026-04-22.md:57` — that source summary is
+  immutable history now, so leaving as-is. Reconciliation is on the
+  live `plugin-api-surface.md` page.
+
 ## [2026-04-23] — catalogue PluginBus (new in upstream deadworks)
 
 - **Operation:** ingest (new API surface added upstream)
