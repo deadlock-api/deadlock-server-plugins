@@ -5,7 +5,21 @@ created: 2026-04-21
 updated: 2026-04-23
 ---
 
-_Last ingest: 2026-04-23 — **`citadel_kick_disconnected_players`
+_Last ingest: 2026-04-23 — **PluginBus catalogued** (new in upstream
+`../deadworks/`): static `DeadworksManaged.Api.PluginBus` for
+plugin-to-plugin **events** (fire-and-forget, max-wins `HookResult`
+aggregation) and **queries** (request/response, collect-all).
+Synchronous, auto-cleaned on plugin unload, names compared ordinally
+(`plugin_name:event_name` convention). `[EventHandler]` /
+`[QueryHandler]` attribute scan; stack-walk resolves `SenderPluginName`.
+Live constraint: typed `Subscribe<T>` / `HandleQuery<…>` will NOT match
+across plugins unless the contract type lives in
+`DeadworksManaged.Api` or a shared DLL (per-plugin `AssemblyLoadContext`
+→ distinct `Type` identity). Diagnostics via `dw_pluginbus` console
+command (subscription + handler lists, 60-second ring buffers, "did you
+mean" suggestions). Not yet used by any plugin in this repo._
+
+_Prev ingest: 2026-04-23 — **`citadel_kick_disconnected_players`
 catalogued**: engine-native concommand ("Clear out all players who
 aren't connected, removing them from any teams") added to
 [[deadlock-game]]. Candidate replacement for the manual
@@ -17,7 +31,7 @@ TeamChangeBlock) have no `OnClientDisconnect` and are not applicable.
 Safest invocation = `sv_cheats 1 / citadel_kick_disconnected_players /
 sv_cheats 0` via `Server.ExecuteCommand`. Untested._
 
-_Prev ingest: 2026-04-23 — **TrooperInvasion boss waves removed**:
+_Prev-prev ingest: 2026-04-23 — **TrooperInvasion boss waves removed**:
 `CBaseEntity.CreateByDesignerName("npc_trooper_boss") + Spawn()` with
 null `CEntityKeyValues` crashed the server natively on the first boss
 spawn. Lane-AI NPCs need `m_iLane` + squad + navmesh region wired in via
@@ -81,6 +95,9 @@ what to load — keep it concise and current.
   `Duration` tick-vs-realtime, `CancelOnMapChange`
 - [[events-surface]] — full 23-hook `IDeadworksPlugin` list, `HookResult`
   max-wins, `AbilityAttemptEvent` masks, `CheckTransmitEvent`
+- [[plugin-bus]] — `PluginBus` plugin-to-plugin events + queries;
+  `[EventHandler]` / `[QueryHandler]`; `dw_pluginbus` diagnostics;
+  type-identity gotcha across plugin ALCs
 - [[schema-accessors]] — `SchemaAccessor<T>` with UTF-8 literals, Players,
   NativeEntityFactory, `EntityData<T>` auto-cleanup
 - [[netmessages-api]] — `NetMessages.Send/Hook`, `[NetMessageHandler]`,
@@ -113,6 +130,6 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 28 (index, log, overview, glossary, 3 source,
-5 plugin, 5 concept, 11 entity, 2 operation)
-**Last ingest:** 2026-04-22 — TrooperInvasion plugin scaffold
+**Total wiki pages:** 29 (index, log, overview, glossary, 3 source,
+5 plugin, 5 concept, 12 entity, 2 operation)
+**Last ingest:** 2026-04-23 — PluginBus entity page

@@ -8,6 +8,77 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-23] — catalogue PluginBus (new in upstream deadworks)
+
+- **Operation:** ingest (new API surface added upstream)
+- **Source:** `raw/notes/2026-04-23-plugin-bus.md` (captured from a user
+  description of the new API; cross-checked against
+  `../deadworks/managed/DeadworksManaged.Api/Bus/*.cs`,
+  `../deadworks/managed/PluginLoader.PluginBus.cs`,
+  `../deadworks/managed/HandlerRegistry.cs`,
+  `../deadworks/managed/ConCommandManager.cs`, and
+  `../deadworks/managed/DeadworksManaged.Tests/PluginBusTests.cs`)
+- **Pages created:** `entities/plugin-bus.md` — full reference:
+  events (4 Subscribe overloads + `[EventHandler]`), queries
+  (3 `HandleQuery` overloads + `[QueryHandler]`), max-wins `HookResult`
+  aggregation, context types, stack-walk sender resolution,
+  `AllowMultiple` attributes, exception isolation, collect-all
+  semantics, type-identity caveat across `AssemblyLoadContext`,
+  `dw_pluginbus` diagnostics with 60-second ring buffers +
+  did-you-mean suggestions, perf notes, quick reference table.
+- **Pages updated:**
+  - `concepts/plugin-api-surface.md` — added `Bus/` row to Subsystems
+    table linking to `[[plugin-bus]]`; added raw note + wikilink to
+    frontmatter; bumped `updated:` to 2026-04-23.
+  - `index.md` — added `[[plugin-bus]]` entry under Entities; replaced
+    "last ingest" blurb; bumped page count 28 → 29.
+- **Key findings:**
+  - **Name comparison is ordinal and case-sensitive.** Both
+    `_eventRegistry` and `_queryRegistry` are constructed with
+    `StringComparer.Ordinal` in `PluginLoader.cs:66-67`. `"My:Foo"`
+    and `"my:foo"` are distinct names.
+  - **Type identity is per-plugin ALC.** Because each plugin loads in
+    its own collectible `AssemblyLoadContext`, a payload/request class
+    defined in two plugins' own DLLs has distinct `Type` identities —
+    typed `Subscribe<T>` / `HandleQuery<…>` / typed-request handlers
+    silently never match across plugins. Fix: put the contract in
+    `DeadworksManaged.Api` (shared-identity assembly) or use untyped
+    `object?` payloads. Ordered preference ladder: framework types →
+    API types → shared-contract DLL → untyped `object?`.
+  - **Typed-request mismatch is the most likely silent bug.**
+    `dw_pluginbus` surfaces it via `(handlers: N, responses: 0)` rows
+    in the recent-queries section — `0` responses while handlers are
+    registered means the request type didn't match any handler's
+    declared `TRequest`.
+  - **`Publish` aggregation uses the same max-wins rule as
+    `IDeadworksPlugin`** (`HookResult.Continue < Stop < Handled`), so
+    subscribers "vote" the same way engine-event subscribers do in
+    [[events-surface]]. All subscribers always run, even after a
+    `Handled`.
+  - **Auto-cleanup is free.** Host routes each manual
+    `Subscribe`/`HandleQuery` through a stack-walking dispatcher that
+    resolves the calling plugin's path and stores it on the
+    subscription; `HandlerRegistry.UnregisterPlugin` removes events +
+    queries in one pass on unload. No `OnUnload` bookkeeping needed.
+  - **Dispatch is direct delegate invocation.** Typed wrappers are
+    generated once at register time via cached `MethodInfo +
+    MakeGenericMethod` (`BuildTypedEventFunc`, `BuildQueryTypedFunc`
+    in `PluginLoader.PluginBus.cs:44-73`). Handler lists are
+    snapshot-copied under lock, iterated lock-free — handlers can
+    call back into `Publish`/`Query` without self-deadlocking.
+  - **Diagnostics ring buffer** holds 64 entries each for publishes
+    and queries (`RecentHistoryCapacity`,
+    `PluginLoader.PluginBus.cs:34`), filtered to the last 60s at
+    display time by `dw_pluginbus`. Command registered in
+    `ConCommandManager.cs:26`.
+- **Repo impact:** none yet — no plugin in
+  `deadlock-server-plugins/` currently publishes or subscribes via
+  `PluginBus`. Candidate future uses: TrooperInvasion exposing wave /
+  patron state; Deathmatch exposing round boundaries; a shared
+  `stats:online_players` query across gamemode plugins. Noted on the
+  entity page's "Current usage in this repo" section.
+- **Contradictions flagged:** none.
+
 ## [2026-04-23] — catalogue citadel_kick_disconnected_players
 
 - **Operation:** ingest (engine-API catalogue + plugin applicability pass)

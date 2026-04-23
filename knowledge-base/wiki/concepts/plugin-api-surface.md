@@ -3,6 +3,7 @@ title: Plugin API Surface
 type: concept
 sources:
   - raw/notes/2026-04-22-deadworks-plugin-api-surface.md
+  - raw/notes/2026-04-23-plugin-bus.md
   - ../deadworks/managed/DeadworksManaged.Api/
 related:
   - "[[deadworks-runtime]]"
@@ -13,10 +14,11 @@ related:
   - "[[netmessages-api]]"
   - "[[plugin-config]]"
   - "[[gameevent-source-generator]]"
+  - "[[plugin-bus]]"
   - "[[examples-index]]"
   - "[[deadworks-scan-2026-04-22]]"
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-04-23
 confidence: high
 ---
 
@@ -60,6 +62,7 @@ All hook methods on `IDeadworksPlugin` have default no-op implementations
 
 | Folder | Page |
 |--------|------|
+| `Bus/` | [[plugin-bus]] — plugin-to-plugin events + queries, `[EventHandler]` / `[QueryHandler]`, `dw_pluginbus` diagnostics |
 | `Commands/` | [[command-attribute]] — unified `[Command]` attribute |
 | `ConCommands/` | `[ConCommand]`, `[ConVar]` — deprecated; migrate to `[Command]` |
 | `Config/` | [[plugin-config]] — `[PluginConfig]`, `IConfig.Validate`, hot-reload |
