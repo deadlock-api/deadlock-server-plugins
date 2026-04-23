@@ -117,6 +117,23 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private int _deathsPrevWave;
     private readonly Dictionary<int, DateTime> _playerJoinTimes = new();
 
+    // Round-scoped per-player leaderboard. Kills + bounty are attributed in
+    // OnEntityKilled (engine-paid bounty mirrors the plugin's goldReward
+    // formula; boss bonus folds in via EBossKill). Emitted to chat +
+    // PostHog at every round-ending path (cleared / victory / defeat /
+    // abandoned); cleared by EmitRoundSummary and defensively by DisarmWaves
+    // so a fresh round starts at zero.
+    private sealed class RoundPlayerStats
+    {
+        public string Name = "Unknown";
+        public string? HashedSteamId;
+        public int HeroId;
+        public int Kills;
+        public int Bounty;
+        public int Deaths;
+    }
+    private readonly Dictionary<int, RoundPlayerStats> _roundStatsBySlot = new();
+
     [PluginConfig]
     public TrooperInvasionConfig Config { get; set; } = new();
 
@@ -166,12 +183,10 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _aliveEnemyTroopers.Clear();
         _starterGoldSeeded.Clear();
         _voteSkipSlots.Clear();
+        _roundStatsBySlot.Clear();
         ResetSessionStats();
 
         // Match-clock and GameState left to the engine — the HUD clock runs natively.
-        // UnlockFlexSlots scheduled per-player-join in OnClientFullConnect, not at
-        // startup — the per-team CCitadelTeam entities don't exist until a player
-        // is on that team, so a boot-time call would no-op on an empty map.
         // Empty-server cleanup (spawn-disable + trooper cull) is handled inside
         // OnClientDisconnect the moment the last player leaves — no polling interval.
     }
@@ -240,6 +255,68 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _sessionStartUtc = null;
     }
 
+    // Creates-or-refreshes the per-round stat row for a human controller.
+    // Null controller (disconnected / partial entity) → null so the caller
+    // skips attribution without NPE.
+    private RoundPlayerStats? EnsureRoundStats(CCitadelPlayerController? controller)
+    {
+        if (controller == null) return null;
+        int slot = controller.Slot;
+        if (!_roundStatsBySlot.TryGetValue(slot, out var stats))
+        {
+            stats = new RoundPlayerStats();
+            _roundStatsBySlot[slot] = stats;
+        }
+        stats.Name = controller.PlayerName ?? stats.Name;
+        if (stats.HashedSteamId == null && StatsClient.Enabled)
+            stats.HashedSteamId = StatsClient.HashSteamId(controller.PlayerSteamId);
+        stats.HeroId = controller.PlayerDataGlobal.HeroID;
+        return stats;
+    }
+
+    // Broadcasts a ranked chat leaderboard for the round that just ended and
+    // emits one ti_round_player_summary event per tracked player. No-op if
+    // the dict is empty, so double-fire paths (victory emits the summary,
+    // then last-disconnect tries again) don't produce blank "Round N summary:"
+    // headers. Clears the tracker as the final step.
+    private void EmitRoundSummary(string outcome, int round, int waves)
+    {
+        if (_roundStatsBySlot.Count == 0) return;
+
+        var ordered = _roundStatsBySlot
+            .OrderByDescending(kv => kv.Value.Kills)
+            .ThenByDescending(kv => kv.Value.Bounty)
+            .ToList();
+
+        Chat.PrintToChatAll($"[TI] Round {round} summary ({waves} wave{(waves == 1 ? "" : "s")}, {outcome}):");
+        int rank = 1;
+        foreach (var (_, s) in ordered)
+        {
+            Chat.PrintToChatAll(
+                $"[TI]   {rank}. {s.Name} — {s.Kills} kills · {s.Bounty} souls · {s.Deaths} death{(s.Deaths == 1 ? "" : "s")}");
+            rank++;
+        }
+
+        if (StatsClient.Enabled)
+        {
+            foreach (var (_, s) in ordered)
+            {
+                StatsClient.Capture("ti_round_player_summary", s.HashedSteamId, new Dictionary<string, object?>
+                {
+                    ["round"] = round,
+                    ["waves"] = waves,
+                    ["outcome"] = outcome,
+                    ["kills"] = s.Kills,
+                    ["bounty"] = s.Bounty,
+                    ["deaths"] = s.Deaths,
+                    ["hero_id"] = s.HeroId,
+                });
+            }
+        }
+
+        _roundStatsBySlot.Clear();
+    }
+
     private float ComputeWaveInterval(int humans)
     {
         // Linear interp: 1 player → SlowWaveIntervalSeconds, 32 → FastWaveIntervalSeconds.
@@ -281,6 +358,10 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // from a fresh onboarding ramp at wave 1, not mid-progression at wave N.
         _waveNum = 0;
         _voteSkipSlots.Clear();
+        // Round ended one way or another — drop any leftover stats. Normal
+        // round-clear/victory/defeat paths already cleared via EmitRoundSummary,
+        // so this is defensive for manual !stopwaves and no-player disarms.
+        _roundStatsBySlot.Clear();
         Console.WriteLine($"[TI] Wave scheduler paused ({reason}). Troopers culled, wave counter reset.");
     }
 
@@ -303,6 +384,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // The round-end announcement must fire while _wavesActive is still true
         // (otherwise RunWave's continuation guard would cancel us).
         AnnounceHud($"ROUND {_roundNum} CLEARED", $"{completed} waves survived — fresh round in {IntermissionSeconds:0}s");
+        EmitRoundSummary("cleared", _roundNum, completed);
         Console.WriteLine($"[TI] Round {_roundNum} complete at wave {completed}. Intermission {IntermissionSeconds:0}s.");
 
         // Let the burst window finish before culling + announcing intermission start.
@@ -647,6 +729,25 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             return HookResult.Continue;
         }
 
+        // Enemy trooper/boss kill attribution — feeds the round summary.
+        // Bounty mirrors the engine-paid formula (citadel_trooper_gold_reward
+        // is set to this per wave in RunWave); boss bonus is folded in inside
+        // the boss-specific branch below.
+        if ((killed.DesignerName == "npc_trooper" || killed.DesignerName == "npc_trooper_boss")
+            && killed.TeamNum == EnemyTeam)
+        {
+            var trooperKiller = CBaseEntity.FromIndex<CCitadelPlayerPawn>(args.EntindexAttacker);
+            if (trooperKiller != null && trooperKiller.TeamNum == HumanTeam)
+            {
+                var stats = EnsureRoundStats(trooperKiller.Controller);
+                if (stats != null)
+                {
+                    stats.Kills++;
+                    stats.Bounty += 70 + _waveNum * 10;
+                }
+            }
+        }
+
         // Boss-wave bounty: any npc_trooper_boss killed during a boss wave
         // grants the attacker a flat bonus on top of the engine's default
         // trooper reward. Tagged EBossKill so the client HUD reads as a boss
@@ -660,12 +761,11 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
                 attackerPawn.ModifyCurrency(ECurrencyType.EGold, bonus, ECurrencySource.EBossKill);
                 string killerName = attackerPawn.Controller?.PlayerName ?? "Unknown";
                 Chat.PrintToChatAll($"[TI] Boss down — +{bonus} souls to {killerName}.");
+                var bossStats = EnsureRoundStats(attackerPawn.Controller);
+                if (bossStats != null) bossStats.Bounty += bonus;
                 if (StatsClient.Enabled)
                 {
-                    string? hashed = null;
-                    var controller = attackerPawn.Controller;
-                    if (controller != null) hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
-                    StatsClient.Capture("ti_boss_killed", hashed, new Dictionary<string, object?>
+                    StatsClient.Capture("ti_boss_killed", bossStats?.HashedSteamId, new Dictionary<string, object?>
                     {
                         ["wave"] = _waveNum,
                         ["round"] = _roundNum,
@@ -675,21 +775,26 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             }
         }
 
-        // Human-player death tracking (stats-only; no gameplay effect).
-        if (StatsClient.Enabled && killed.TeamNum == HumanTeam)
+        // Human-player death: feeds _deathsThisWave (scheduler telemetry),
+        // per-slot round summary, and the per-death PostHog event.
+        if (killed.TeamNum == HumanTeam)
         {
             var pawn = killed.As<CCitadelPlayerPawn>();
             var controller = pawn?.Controller;
             if (controller != null)
             {
                 _deathsThisWave++;
-                var hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
-                StatsClient.Capture("ti_player_died", hashed, new Dictionary<string, object?>
+                var stats = EnsureRoundStats(controller);
+                if (stats != null) stats.Deaths++;
+                if (StatsClient.Enabled)
                 {
-                    ["wave"] = _waveNum,
-                    ["round"] = _roundNum,
-                    ["hero_id"] = controller.PlayerDataGlobal.HeroID,
-                });
+                    StatsClient.Capture("ti_player_died", stats?.HashedSteamId, new Dictionary<string, object?>
+                    {
+                        ["wave"] = _waveNum,
+                        ["round"] = _roundNum,
+                        ["hero_id"] = controller.PlayerDataGlobal.HeroID,
+                    });
+                }
             }
         }
 
@@ -702,6 +807,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
         AnnounceHud("VICTORY!", $"Sapphire Patron destroyed — survived {_waveNum} waves. Fresh round in {PostModeCooldownSeconds:0}s.");
         Console.WriteLine($"[TI] VICTORY at wave {_waveNum}");
+        EmitRoundSummary("victory", _roundNum, _waveNum);
         EmitSessionOutcome("victory");
         BeginPostModeCooldown("victory");
     }
@@ -712,6 +818,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
         AnnounceHud("DEFEAT", $"Amber Patron has fallen at wave {_waveNum}. Fresh round in {PostModeCooldownSeconds:0}s.");
         Console.WriteLine($"[TI] DEFEAT at wave {_waveNum}");
+        EmitRoundSummary("defeat", _roundNum, _waveNum);
         EmitSessionOutcome("defeat");
         BeginPostModeCooldown("defeat");
     }
@@ -967,6 +1074,9 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             // Stats: session-outcome emission before the reset. If a victory
             // or defeat already fired, EmitSessionOutcome is a no-op
             // (_sessionStartUtc cleared). Otherwise this is an abandoned session.
+            // Emit the per-player round summary too — nobody's on the server
+            // to see the chat lines, but PostHog still captures the stats.
+            EmitRoundSummary("abandoned", _roundNum, _waveNum);
             EmitSessionOutcome("abandoned");
             DisarmWaves("last player disconnected");
             _roundNum = 1;
