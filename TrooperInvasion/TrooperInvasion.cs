@@ -19,6 +19,14 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
     private const string PatronDesigner = "npc_barrack_boss";
 
+    // Schema accessor for the one-shot GameInProgress pin. Without this, the
+    // engine sits in PreGameWait and never spawns npc_boss_tier1 (Guardians)
+    // or npc_boss_tier2 (Walkers) — only the pre-match placeholders exist.
+    // Patron death is still intercepted in OnTakeDamage, so the state won't
+    // flip back to PostGame; a single write at startup is enough.
+    private static readonly SchemaAccessor<uint> _eGameState =
+        new("CCitadelGameRules"u8, "m_eGameState"u8);
+
     // Starter stipend + a per-wave catch-up so a late joiner at wave N isn't
     // stuck in tier-0 while everyone else has earned progression.
     private const int StarterGold = 2500;
@@ -171,11 +179,37 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _roundStatsBySlot.Clear();
         ResetSessionStats();
 
-        // Match-clock and GameState left to the engine — the HUD clock runs natively.
+        // Match-clock left to the engine — the HUD clock runs natively.
         // Patron death is intercepted in OnTakeDamage below so the engine never
         // transitions m_eGameState to PostGame (which would kick all clients).
         // Empty-server cleanup (spawn-disable + trooper cull) is handled inside
         // OnClientDisconnect the moment the last player leaves — no polling interval.
+
+        // One-shot GameInProgress pin. Deferred because GameRules isn't
+        // guaranteed to be networked at OnStartupServer. Retries a handful of
+        // times if the proxy isn't ready yet, then stops. Unlike Deathmatch's
+        // per-tick pin, we don't watch for drift: gameover_msg / round_end are
+        // both HookResult.Stop'd and Patron death is pre-empted, so nothing
+        // flips the state back.
+        PinGameInProgress(attemptsLeft: 10);
+    }
+
+    private void PinGameInProgress(int attemptsLeft)
+    {
+        if (attemptsLeft <= 0) return;
+        Timer.Once(1000.Milliseconds(), () =>
+        {
+            if (!GameRules.IsValid)
+            {
+                PinGameInProgress(attemptsLeft - 1);
+                return;
+            }
+            var ptr = GameRules.Pointer;
+            var current = (EGameState)_eGameState.Get(ptr);
+            if (current != EGameState.GameInProgress)
+                _eGameState.Set(ptr, (uint)EGameState.GameInProgress);
+            Console.WriteLine($"[TI] Pinned m_eGameState -> GameInProgress (was {current}).");
+        });
     }
 
     private void CullAllTroopers()
