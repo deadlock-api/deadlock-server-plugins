@@ -2,15 +2,19 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-04-22
+updated: 2026-04-23
 ---
 
-_Last ingest: 2026-04-22 — correction: **Deadlock has only 3 lanes now**
-(`{1=Yellow, 4=Blue, 6=Purple}`), not 4. `citadel_active_lane` takes
-OR'd lane IDs, not a `(1<<N)-1` bitmask — the naive formula wedges the
-spawn pipeline at mask `3` (defunct Green). TrooperInvasion 4-player
-wedge fixed by OR'ing `{1, 4, 6}` markers. Prior-day wikis that asserted
-4 lanes / bit-position math are now flagged as superseded._
+_Last ingest: 2026-04-23 — **TrooperInvasion boss waves removed**:
+`CBaseEntity.CreateByDesignerName("npc_trooper_boss") + Spawn()` with
+null `CEntityKeyValues` crashed the server natively on the first boss
+spawn. Lane-AI NPCs need `m_iLane` + squad + navmesh region wired in via
+KV at Spawn time (the real path is `CCitadelTrooperSpawnGameSystem`
+driven by `info_trooper_spawn` / `info_super_trooper_spawn`). Managed
+spawn is only safe for point entities with explicit KV
+(`CPointWorldText`, `ParticleSystem`). Reach-for-next-time pattern
+documented: native `citadel_spawn_trooper x,y,z boss` bracketed with
+`sv_cheats 1 / 0`._
 
 # Content Catalog
 

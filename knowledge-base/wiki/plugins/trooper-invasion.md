@@ -12,6 +12,7 @@ sources:
   - knowledge-base/raw/notes/2026-04-22-deadlock-three-lanes-only.md
   - knowledge-base/raw/notes/2026-04-22-hud-game-announcement.md
   - knowledge-base/raw/notes/2026-04-22-host-api-version-skew.md
+  - knowledge-base/raw/notes/2026-04-23-boss-wave-native-crash.md
   - ../TrooperInvasion/TrooperInvasion.cs
   - ../TrooperInvasion/TrooperInvasion.csproj
 related:
@@ -24,7 +25,7 @@ related:
   - "[[deathmatch]]"
   - "[[examples-index]]"
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-04-23
 confidence: high
 ---
 
@@ -264,6 +265,55 @@ UTF-16. `strings` defaults to ASCII and misses them. Use
 `strings -e l -n 12 dump.mdmp | grep 'Method not found\|Exception'` to
 recover the full exception message + missing-method signature without
 needing WinDbg.
+
+## Boss waves — removed (native crash on first spawn)
+
+An earlier iteration added round-end boss waves that manually spawned
+`npc_trooper_boss` via the managed entity API:
+
+```csharp
+var boss = CBaseEntity.CreateByDesignerName("npc_trooper_boss");
+boss.TeamNum = EnemyTeam;
+boss.Teleport(pos);
+boss.Spawn();             // null CEntityKeyValues
+```
+
+**This crashed the server natively on the first boss spawn every time.**
+`npc_trooper_boss` is a lane-AI NPC — the engine's normal spawn path
+(`CEntitySpawner<CNPC_TrooperBoss>::Spawn`, driven by
+`CCitadelTrooperSpawnGameSystem` + the map's `info_trooper_spawn` /
+`info_super_trooper_spawn` entities) feeds it `m_iLane`, squad
+registration, and a navmesh region via a fully-populated CEntityKeyValues.
+With null KV and only `TeamNum` set via schema, the post-`Spawn` AI init
+dereferences a null/uninitialised lane or squad pointer. C# `try/catch`
+can't see the crash — it's below the managed boundary.
+
+Point-entity managed spawns (`CPointWorldText.Create`,
+`ParticleSystem.Spawn`) don't trip this because they pass an explicit
+`CEntityKeyValues` into `Spawn(ekv)` and have no lane/squad dependency.
+**The managed-spawn pattern is only safe for non-AI entities with
+explicit KV.** No managed API wrapper exists for trooper classes, and the
+schema of CEntityKeyValues keys on `CNPC_TrooperBoss` that would let us
+feed it lane/squad safely is not published.
+
+Contradicts raw note `2026-04-23-trooper-invasion-boss-waves.md` (which
+described the `CreateByDesignerName + Spawn()` pattern as working — it
+was written pre-production-test). That note stands as historical context
+but its first section is superseded by
+`2026-04-23-boss-wave-native-crash.md`.
+
+**If boss waves are reintroduced**, use the engine's native cheat
+concommand `citadel_spawn_trooper %f,%f,%f %s` (valid types:
+`default` / `boss` / `melee` / `medic` / `flying`) which routes through
+`CCitadelTrooperSpawnGameSystem` properly. It's FCVAR_CHEAT, so bracket
+with `sv_cheats 1` / `sv_cheats 0` — same idiom
+`FlexSlotUnlock.cs:29-31` uses for `citadel_unlock_flex_slots`. Format
+coords with `CultureInfo.InvariantCulture` so a Wine locale doesn't
+decimal-comma the float list. The engine still naturally promotes regular
+troopers to `npc_trooper_boss` via the super-trooper progression (see
+`citadel_super_trooper_gold_mult`), so the plugin's `_trooperDesigners`
+list and kill-attribution filters still recognise bosses without any
+manual spawn.
 
 ## What's intentionally missing (vs Deathmatch)
 

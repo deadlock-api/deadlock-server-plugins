@@ -8,6 +8,71 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-23] — boss-wave native crash; boss waves removed from TrooperInvasion
+
+- **Operation:** ingest (bug-fix + feature-removal finding)
+- **Source:** `raw/notes/2026-04-23-boss-wave-native-crash.md`
+- **Pages updated:** `plugins/trooper-invasion.md` — new "Boss waves —
+  removed (native crash on first spawn)" section documents the managed
+  spawn path that crashed the server, why (lane-AI NPCs need a populated
+  `CEntityKeyValues` at Spawn time for `m_iLane` + squad + navmesh region;
+  `CCitadelTrooperSpawnGameSystem` is the engine's real spawn path), why
+  `CPointWorldText`/`ParticleSystem` managed spawns don't trip it (they
+  pass explicit KV; no AI dependency), and the reach-for-next-time
+  `citadel_spawn_trooper x,y,z boss` + `sv_cheats 1/0` pattern. `updated:`
+  bumped; new raw note appended to `sources:`.
+- **Key findings:**
+  - **`CreateByDesignerName("npc_trooper_boss") + Spawn()` with null
+    CEntityKeyValues crashes the server natively** on the first spawn.
+    `npc_trooper_boss` is a lane-AI NPC; the engine's normal path is
+    `CEntitySpawner<CNPC_TrooperBoss>::Spawn` driven by
+    `CCitadelTrooperSpawnGameSystem` and the map's `info_trooper_spawn` /
+    `info_super_trooper_spawn` entities, which populate `m_iLane` + squad
+    + navmesh region through a fully-built KV. Without that, the post-
+    `Spawn` AI init dereferences null. Sub-managed-boundary crash — C#
+    `try/catch` doesn't see it.
+  - **Managed entity creation is only safe for point entities with
+    explicit KV.** `CPointWorldText.Create` and `ParticleSystem.Spawn`
+    use `Spawn(ekv)` with a full `CEntityKeyValues` and have no lane/
+    AI dependency, which is why those work.
+  - **If boss waves are reintroduced**, use the engine's native cheat
+    concommand `citadel_spawn_trooper %f,%f,%f %s` (valid types
+    `default / boss / melee / medic / flying` — confirmed from
+    `server.dll` strings). Bracket with `sv_cheats 1 / sv_cheats 0` —
+    same idiom `FlexSlotUnlock.cs:29-31` uses for
+    `citadel_unlock_flex_slots`. Format coords with
+    `CultureInfo.InvariantCulture` so a Wine locale doesn't turn
+    `123.45` into `123,45` and corrupt the comma-separated args list.
+  - **Engine still emits `npc_trooper_boss` naturally** via the
+    super-trooper promotion (`citadel_super_trooper_gold_mult`), so
+    the plugin's `_trooperDesigners` list, OnEntitySpawned cap
+    tracking, HP scaling, and kill-attribution branches still need to
+    recognise bosses — only our *manual* spawning is gone.
+- **Code changes:**
+  - Removed `SpawnBossTroopers`, `TriggerBossWave`, `IsBossWave`,
+    `BossBonusGoldAt` methods.
+  - Removed `_pendingBossSpawn` handle + all Cancel/clear sites.
+  - Removed constants: `BossWaveEveryN`, `BossesPerLane`,
+    `BossBonusGoldBase`, `BossBonusGoldPerWave`,
+    `BossSpawnDelaySeconds`.
+  - Removed boss-kill bonus branch in `OnEntityKilled`
+    (including the `ECurrencySource.EBossKill` payout).
+  - Removed `[BOSS WAVE]` suffix from `!wave` output and the help line
+    advertising boss waves.
+  - Removed `ti_boss_wave_started` + `ti_boss_killed` PostHog events.
+- **Contradictions flagged:**
+  - Raw note `2026-04-23-trooper-invasion-boss-waves.md` §1
+    ("`CreateByDesignerName + Spawn()`") is **superseded** — that
+    managed-spawn pattern crashes for lane-AI NPCs. The note was
+    written pre-production-test. Section §§2–6 remain valid.
+  - Raw notes are append-only, so the correction lives in
+    `2026-04-23-boss-wave-native-crash.md` and the new wiki section.
+- **Related surface still intact (not removed):**
+  - `npc_trooper_boss` in `_trooperDesigners` — for
+    engine-promoted-bosses tracking.
+  - `!voteskip` command, round summary, HP scaling across waves/rounds
+    — all unrelated to the boss-wave feature.
+
 ## [2026-04-22] — Deadlock has only 3 lanes; fix TrooperInvasion 4-player wedge
 
 - **Operation:** ingest (bug-fix finding)

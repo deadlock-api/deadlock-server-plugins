@@ -78,20 +78,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // the new session, producing back-to-back waves or premature spawn cutoff.
     private IHandle? _pendingWaveTimer;
     private IHandle? _pendingBurstEnd;
-    private IHandle? _pendingBossSpawn;
-    // Boss-wave settings. Every BossWaveEveryN waves (i.e. the round-end wave,
-    // since BossWaveEveryN == RoundLength) a cadre of npc_trooper_boss NPCs
-    // is layered on top of the engine's regular trooper burst. Bounty bonus
-    // is granted via ECurrencySource.EBossKill in OnEntityKilled, so it reads
-    // as a proper boss kill in the client HUD instead of a plain trooper bounty.
-    private const int BossWaveEveryN = RoundLength;
-    private const int BossesPerLane = 2;
-    private const int BossBonusGoldBase = 500;
-    private const int BossBonusGoldPerWave = 50;
-    // Delay from wave-start → manual boss spawn. Long enough for the engine's
-    // trooper burst to have placed at least one npc_trooper at each active
-    // lane's spawn point — we piggyback on those positions (see SpawnBossTroopers).
-    private const float BossSpawnDelaySeconds = 1.5f;
     // Vote-skip ledger: controller Slots that voted to end the current round
     // early. Cleared on round boundaries (DisarmWaves) so each round gets a
     // fresh ballot.
@@ -179,7 +165,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _roundNum = 1;
         _pendingWaveTimer?.Cancel(); _pendingWaveTimer = null;
         _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
-        _pendingBossSpawn?.Cancel(); _pendingBossSpawn = null;
         _aliveEnemyTroopers.Clear();
         _starterGoldSeeded.Clear();
         _voteSkipSlots.Clear();
@@ -351,7 +336,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _wavesActive = false;
         _pendingWaveTimer?.Cancel(); _pendingWaveTimer = null;
         _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
-        _pendingBossSpawn?.Cancel(); _pendingBossSpawn = null;
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
         CullAllTroopers();
         // Reset wave counter so the next session (new player joining later) starts
@@ -587,84 +571,11 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
         });
 
-        if (IsBossWave(_waveNum))
-            TriggerBossWave(activeLanes);
-
         // Round boundary: trigger intermission instead of scheduling another wave.
         if (_waveNum >= RoundLength)
             BeginIntermission(burstSeconds + 2f);
         else
             ScheduleNextWave();
-    }
-
-    private static bool IsBossWave(int waveNum) => waveNum > 0 && waveNum % BossWaveEveryN == 0;
-
-    private int BossBonusGoldAt(int waveNum) => BossBonusGoldBase + waveNum * BossBonusGoldPerWave;
-
-    private void TriggerBossWave(int activeLanes)
-    {
-        int bossCount = activeLanes * BossesPerLane;
-        int bonus = BossBonusGoldAt(_waveNum);
-        AnnounceHud("BOSS WAVE", $"{bossCount} elite troopers incoming — +{bonus} souls per boss kill!");
-        StatsClient.Capture("ti_boss_wave_started", null, new Dictionary<string, object?>
-        {
-            ["wave"] = _waveNum,
-            ["round"] = _roundNum,
-            ["players"] = HumanPlayerCount(),
-            ["boss_count"] = bossCount,
-            ["bonus_gold"] = bonus,
-        });
-
-        // Defer manual spawn so the engine's regular burst has had a moment to
-        // place troopers at each active lane. SpawnBossTroopers samples their
-        // positions as a stand-in for the lane spawn coords — reuses the lane
-        // infra without hardcoding any per-map data.
-        _pendingBossSpawn?.Cancel();
-        _pendingBossSpawn = Timer.Once(((int)(BossSpawnDelaySeconds * 1000)).Milliseconds(), () =>
-        {
-            _pendingBossSpawn = null;
-            if (_modeOver || !_wavesActive) return;
-            SpawnBossTroopers(bossCount);
-        });
-    }
-
-    private void SpawnBossTroopers(int count)
-    {
-        // Reuse the engine's lane spawn infra indirectly: the regular burst has
-        // just placed npc_trooper entities at each active lane's spawn, so a
-        // random sample of their positions gives us valid lane-aligned coords
-        // without hardcoding any per-map data.
-        var positions = Entities.ByDesignerName("npc_trooper")
-            .Where(e => e.TeamNum == EnemyTeam)
-            .Select(e => e.Position)
-            .Where(p => p != System.Numerics.Vector3.Zero)
-            .ToList();
-
-        if (positions.Count == 0)
-        {
-            Console.WriteLine("[TI] Boss spawn skipped: no lane troopers to sample.");
-            return;
-        }
-
-        int spawned = 0;
-        for (int i = 0; i < count; i++)
-        {
-            var pos = positions[Random.Shared.Next(positions.Count)];
-            var boss = CBaseEntity.CreateByDesignerName("npc_trooper_boss");
-            if (boss == null)
-            {
-                Console.WriteLine("[TI] CreateByDesignerName('npc_trooper_boss') returned null.");
-                continue;
-            }
-            // Team MUST be set before Spawn so the engine wires the NPC onto
-            // the enemy side (and OnEntitySpawned's strict-team filter counts
-            // them toward _aliveEnemyTroopers / the on-map cap).
-            boss.TeamNum = EnemyTeam;
-            boss.Teleport(pos);
-            boss.Spawn();
-            spawned++;
-        }
-        Console.WriteLine($"[TI] Boss wave: spawned {spawned}/{count} npc_trooper_boss at sampled lane positions.");
     }
 
     public override void OnEntitySpawned(EntitySpawnedEvent args)
@@ -744,33 +655,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
                 {
                     stats.Kills++;
                     stats.Bounty += 70 + _waveNum * 10;
-                }
-            }
-        }
-
-        // Boss-wave bounty: any npc_trooper_boss killed during a boss wave
-        // grants the attacker a flat bonus on top of the engine's default
-        // trooper reward. Tagged EBossKill so the client HUD reads as a boss
-        // kill rather than a regular lane-trooper credit.
-        if (killed.DesignerName == "npc_trooper_boss" && killed.TeamNum == EnemyTeam && IsBossWave(_waveNum))
-        {
-            var attackerPawn = CBaseEntity.FromIndex<CCitadelPlayerPawn>(args.EntindexAttacker);
-            if (attackerPawn != null && attackerPawn.TeamNum == HumanTeam)
-            {
-                int bonus = BossBonusGoldAt(_waveNum);
-                attackerPawn.ModifyCurrency(ECurrencyType.EGold, bonus, ECurrencySource.EBossKill);
-                string killerName = attackerPawn.Controller?.PlayerName ?? "Unknown";
-                Chat.PrintToChatAll($"[TI] Boss down — +{bonus} souls to {killerName}.");
-                var bossStats = EnsureRoundStats(attackerPawn.Controller);
-                if (bossStats != null) bossStats.Bounty += bonus;
-                if (StatsClient.Enabled)
-                {
-                    StatsClient.Capture("ti_boss_killed", bossStats?.HashedSteamId, new Dictionary<string, object?>
-                    {
-                        ["wave"] = _waveNum,
-                        ["round"] = _roundNum,
-                        ["bonus_gold"] = bonus,
-                    });
                 }
             }
         }
@@ -945,7 +829,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         "[TI] !stopwaves — halt scheduler (and close spawn window)",
         "[TI] !nextwave — trigger one wave immediately (dev)",
         "[TI] !voteskip — vote to end the current round (>30% of players required)",
-        "[TI] Every round-end wave is a BOSS WAVE: extra npc_trooper_boss, bonus souls per kill.",
     };
 
     [Command("help", Description = "Show available TrooperInvasion commands")]
@@ -958,8 +841,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     [Command("wave", Description = "Show current round and wave")]
     public void CmdWave(CCitadelPlayerController caller)
     {
-        string bossSuffix = IsBossWave(_waveNum) ? " [BOSS WAVE]" : "";
-        Chat.PrintToChat(caller.Slot, $"[TI] Round {_roundNum} Wave {_waveNum}/{RoundLength}{bossSuffix}{(_modeOver ? " (MODE OVER)" : "")}");
+        Chat.PrintToChat(caller.Slot, $"[TI] Round {_roundNum} Wave {_waveNum}/{RoundLength}{(_modeOver ? " (MODE OVER)" : "")}");
     }
 
     [Command("startwaves", Description = "Manually arm the wave scheduler")]
