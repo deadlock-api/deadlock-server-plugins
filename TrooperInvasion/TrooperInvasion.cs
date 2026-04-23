@@ -484,6 +484,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         }
 
         int cap = ComputeTrooperCap(humans);
+        ReconcileAliveTroopers();
         int alive = _aliveEnemyTroopers.Count;
         if (alive >= cap)
         {
@@ -580,6 +581,19 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     public override void OnEntityDeleted(EntityDeletedEvent args)
     {
         _aliveEnemyTroopers.Remove(args.Entity.EntityIndex);
+    }
+
+    // OnEntityDeleted misses some trooper removal paths (super-trooper promotion,
+    // engine end-of-lane despawn), so the set leaks across waves. Sweep entries
+    // whose entity is gone or no longer an enemy trooper before the cap check.
+    private void ReconcileAliveTroopers()
+    {
+        if (_aliveEnemyTroopers.Count == 0) return;
+        _aliveEnemyTroopers.RemoveWhere(idx =>
+        {
+            var ent = CBaseEntity.FromIndex(idx);
+            return ent == null || !IsTrooperDesigner(ent.DesignerName) || ent.TeamNum != EnemyTeam;
+        });
     }
 
     [GameEventHandler("gameover_msg")]
