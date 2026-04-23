@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Numerics;
 using System.Text.Json.Serialization;
 using DeadworksManaged.Api;
+using Deathmatch.Stats;
 
 namespace Deathmatch;
 
@@ -69,11 +70,36 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
     private sealed record RankResponse([property: JsonPropertyName("raw_score")] float raw_score);
 
+    // Maintained by OnClientFullConnect/Disconnect. Drives session gating so
+    // rotation ticks on an empty server don't emit zero-player round events.
+    private int _humanCount;
+
+    // Null _sessionStartUtc means no active session — gates session-outcome
+    // emission so last-disconnect doesn't double-fire across reconnects.
+    private DateTime? _sessionStartUtc;
+    private int _peakPlayers;
+    private long _playerCountSampleSum;
+    private int _playerCountSampleCount;
+    private int _dmRoundNum;
+    private readonly Dictionary<int, DateTime> _playerJoinTimes = new();
+
+    private sealed class RoundPlayerStats
+    {
+        public string Name = "Unknown";
+        public string? HashedSteamId;
+        public int HeroId;
+        public int TeamNum;
+        public int Kills;
+        public int Deaths;
+    }
+    private readonly Dictionary<int, RoundPlayerStats> _roundStatsBySlot = new();
+
     [PluginConfig]
     public DeathmatchConfig Config { get; set; } = new();
 
     public override void OnLoad(bool isReload)
     {
+        StatsClient.Configure();
         Console.WriteLine(isReload ? "Deathmatch reloaded!" : "Deathmatch loaded!");
     }
 
@@ -100,6 +126,109 @@ public class DeathmatchPlugin : DeadworksPluginBase
 
         Timer.Every(1.Ticks(), ScaleAbilityCooldowns);
         Timer.Every(1.Ticks(), TickMatchClock);
+
+        _humanCount = 0;
+        _dmRoundNum = 0;
+        _roundStatsBySlot.Clear();
+        ResetSessionStats();
+    }
+
+    private void ResetSessionStats()
+    {
+        _sessionStartUtc = null;
+        _peakPlayers = 0;
+        _playerCountSampleSum = 0;
+        _playerCountSampleCount = 0;
+        _playerJoinTimes.Clear();
+    }
+
+    private void EnsureSessionStarted()
+    {
+        if (_sessionStartUtc == null) _sessionStartUtc = DateTime.UtcNow;
+    }
+
+    private void SamplePlayerCount(int count)
+    {
+        if (count > _peakPlayers) _peakPlayers = count;
+        _playerCountSampleSum += count;
+        _playerCountSampleCount++;
+    }
+
+    // Single-shot: further calls after outcome is emitted become no-ops because
+    // _sessionStartUtc is cleared. Mirrors TrooperInvasion.
+    private void EmitSessionOutcome(string outcome)
+    {
+        if (!StatsClient.Enabled || _sessionStartUtc == null) return;
+        int duration = (int)(DateTime.UtcNow - _sessionStartUtc.Value).TotalSeconds;
+        double avg = _playerCountSampleCount > 0
+            ? (double)_playerCountSampleSum / _playerCountSampleCount
+            : 0;
+        StatsClient.Capture("dm_session_outcome", null, new Dictionary<string, object?>
+        {
+            ["outcome"] = outcome,
+            ["rounds"] = _dmRoundNum,
+            ["duration_s"] = duration,
+            ["peak_players"] = _peakPlayers,
+            ["avg_players"] = Math.Round(avg, 2),
+        });
+        _sessionStartUtc = null;
+    }
+
+    private RoundPlayerStats? EnsureRoundStats(CCitadelPlayerController? controller)
+    {
+        if (controller == null) return null;
+        int slot = controller.Slot;
+        if (!_roundStatsBySlot.TryGetValue(slot, out var stats))
+        {
+            stats = new RoundPlayerStats();
+            _roundStatsBySlot[slot] = stats;
+        }
+        stats.Name = controller.PlayerName ?? stats.Name;
+        if (stats.HashedSteamId == null && StatsClient.Enabled)
+            stats.HashedSteamId = StatsClient.HashSteamId(controller.PlayerSteamId);
+        stats.HeroId = controller.PlayerDataGlobal.HeroID;
+        stats.TeamNum = controller.TeamNum;
+        return stats;
+    }
+
+    // No-op when empty so double-fire paths (rotation → last-disconnect
+    // fallback) don't emit a blank header. Clears the tracker before return.
+    private void EmitRoundSummary(string outcome, int team2Kills, int team3Kills, int activeLane)
+    {
+        if (!StatsClient.Enabled || _roundStatsBySlot.Count == 0)
+        {
+            _roundStatsBySlot.Clear();
+            return;
+        }
+
+        int round = _dmRoundNum;
+        foreach (var (_, s) in _roundStatsBySlot)
+        {
+            StatsClient.Capture("dm_round_player_summary", s.HashedSteamId, new Dictionary<string, object?>
+            {
+                ["round"] = round,
+                ["outcome"] = outcome,
+                ["kills"] = s.Kills,
+                ["deaths"] = s.Deaths,
+                ["hero_id"] = s.HeroId,
+                ["team"] = s.TeamNum,
+                ["team2_kills"] = team2Kills,
+                ["team3_kills"] = team3Kills,
+                ["active_lane"] = activeLane,
+            });
+        }
+        _roundStatsBySlot.Clear();
+    }
+
+    private void EmitRoundStarted()
+    {
+        if (!StatsClient.Enabled) return;
+        StatsClient.Capture("dm_round_started", null, new Dictionary<string, object?>
+        {
+            ["round"] = _dmRoundNum,
+            ["players"] = _humanCount,
+            ["active_lane"] = ActiveLane,
+        });
     }
 
     private void TickMatchClock()
@@ -308,6 +437,34 @@ public class DeathmatchPlugin : DeadworksPluginBase
             $"(counts: {string.Join(",", teamCounts.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value}"))}; " +
             $"ranks: {string.Join(",", teamRanks.OrderBy(kv => kv.Key).Select(kv => $"t{kv.Key}={kv.Value:F0}"))}), " +
             $"hero {hero.ToHeroName()} ({leastPresent.Length} tied at count {min})");
+
+        bool wasEmpty = _humanCount == 0;
+        _humanCount++;
+        _playerJoinTimes[controller.Slot] = DateTime.UtcNow;
+        EnsureSessionStarted();
+        // First joiner reopens a fresh round counter. Subsequent joiners attach
+        // to the in-progress round — dm_round_started only fires once per
+        // rotation cycle (either here on 0→1, or from OnRotationTick).
+        if (wasEmpty)
+        {
+            _dmRoundNum++;
+            _roundStatsBySlot.Clear();
+            EmitRoundStarted();
+        }
+        SamplePlayerCount(_humanCount);
+        if (StatsClient.Enabled)
+        {
+            var hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
+            float rank = ReadRank((uint)controller.PlayerSteamId);
+            StatsClient.Capture("dm_player_joined", hashed, new Dictionary<string, object?>
+            {
+                ["team"] = assignedTeam,
+                ["hero_id"] = hero.GetHeroData()?.HeroID ?? 0,
+                ["current_round"] = _dmRoundNum,
+                ["players"] = _humanCount,
+                ["rank"] = Math.Round(rank, 2),
+            });
+        }
     }
 
     public override HookResult OnTakeDamage(TakeDamageEvent args)
@@ -345,15 +502,39 @@ public class DeathmatchPlugin : DeadworksPluginBase
         if (pawn != null)
             _lastDeathPos[pawn.EntityIndex] = new Vector3(args.VictimX, args.VictimY, args.VictimZ);
 
-        var attacker = args.AttackerController;
+        var attackerBase = args.AttackerController;
         var victimPawn = args.UseridPawn;
-        if (attacker != null && victimPawn != null
-            && attacker.EntityIndex != victimPawn.EntityIndex
+        bool scored = attackerBase != null && victimPawn != null
+            && attackerBase.EntityIndex != victimPawn.EntityIndex
             && args.AttackerPawn != null
-            && args.AttackerPawn.TeamNum != victimPawn.TeamNum)
+            && args.AttackerPawn.TeamNum != victimPawn.TeamNum;
+
+        var attackerCtrl = scored ? args.AttackerPawn?.As<CCitadelPlayerPawn>()?.Controller : null;
+        RoundPlayerStats? attackerStats = null;
+        if (scored)
         {
-            int idx = attacker.EntityIndex;
+            int idx = attackerBase!.EntityIndex;
             _killsThisRound[idx] = _killsThisRound.GetValueOrDefault(idx) + 1;
+            attackerStats = EnsureRoundStats(attackerCtrl);
+            if (attackerStats != null) attackerStats.Kills++;
+        }
+
+        var victimCtrl = victimPawn?.As<CCitadelPlayerPawn>()?.Controller;
+        var victimStats = EnsureRoundStats(victimCtrl);
+        if (victimStats != null) victimStats.Deaths++;
+
+        if (StatsClient.Enabled && victimCtrl != null)
+        {
+            StatsClient.Capture("dm_player_died", victimStats?.HashedSteamId, new Dictionary<string, object?>
+            {
+                ["round"] = _dmRoundNum,
+                ["hero_id"] = victimCtrl.PlayerDataGlobal.HeroID,
+                ["team"] = victimCtrl.TeamNum,
+                ["active_lane"] = ActiveLane,
+                ["attacker_hashed"] = attackerStats?.HashedSteamId,
+                ["attacker_hero_id"] = attackerCtrl?.PlayerDataGlobal.HeroID ?? 0,
+                ["attacker_team"] = attackerCtrl?.TeamNum ?? 0,
+            });
         }
         return HookResult.Continue;
     }
@@ -396,9 +577,15 @@ public class DeathmatchPlugin : DeadworksPluginBase
             if (kills > mvpKills) { mvpKills = kills; mvpIdx = idx; }
         }
 
+        string outcome;
         string title;
-        if (team2Kills == team3Kills) title = "Draw!";
-        else title = $"{TeamName(team2Kills > team3Kills ? 2 : 3)} Team Wins!";
+        if (team2Kills == team3Kills) { outcome = "draw"; title = "Draw!"; }
+        else
+        {
+            int winner = team2Kills > team3Kills ? 2 : 3;
+            outcome = winner == 2 ? "amber" : "sapphire";
+            title = $"{TeamName(winner)} Team Wins!";
+        }
 
         string desc;
         var nextLaneName = LaneName(NextLane);
@@ -420,10 +607,36 @@ public class DeathmatchPlugin : DeadworksPluginBase
         }, RecipientFilter.All);
         Console.WriteLine($"[DM] Rotation: {title} — {desc}");
 
+        // Stats: emit outcome + per-player summary for the round that just
+        // ended. Gate on _humanCount so empty-server rotation ticks stay silent.
+        if (StatsClient.Enabled && _humanCount > 0 && _dmRoundNum > 0)
+        {
+            StatsClient.Capture("dm_round_outcome", null, new Dictionary<string, object?>
+            {
+                ["round"] = _dmRoundNum,
+                ["outcome"] = outcome,
+                ["team2_kills"] = team2Kills,
+                ["team3_kills"] = team3Kills,
+                ["players"] = _humanCount,
+                ["active_lane"] = ActiveLane,
+                ["next_lane"] = NextLane,
+            });
+        }
+        EmitRoundSummary(outcome, team2Kills, team3Kills, ActiveLane);
+
         // Alive players keep fighting in the old lane; they drift into the new lane on
         // their next respawn because PickSpawnPoint targets ActiveLane.
         _activeLaneIdx = (_activeLaneIdx + 1) % _laneCycle.Length;
         _killsThisRound.Clear();
+
+        // New round — bump counter before EmitRoundStarted so the event carries
+        // the upcoming round number (not the one we just summarised).
+        if (_humanCount > 0)
+        {
+            _dmRoundNum++;
+            SamplePlayerCount(_humanCount);
+            EmitRoundStarted();
+        }
 
         _rotationsSinceRebalance++;
         if (_rotationsSinceRebalance >= _laneCycle.Length)
@@ -807,6 +1020,20 @@ public class DeathmatchPlugin : DeadworksPluginBase
             DescriptionLocstring = $"Swapped {swapCount} player(s)  |  Amber {sumA:F0} ↔ Sapphire {sumB:F0}",
         }, RecipientFilter.All);
         Console.WriteLine($"[DM] rebalance: {swapCount} swap(s), sumA={sumA:F1} sumB={sumB:F1} avgDiff={avgDiff:F2}->{finalAvgDiff:F2}");
+
+        if (StatsClient.Enabled)
+        {
+            StatsClient.Capture("dm_team_rebalance", null, new Dictionary<string, object?>
+            {
+                ["round"] = _dmRoundNum,
+                ["swaps"] = swapCount,
+                ["avg_diff_before"] = Math.Round(avgDiff, 2),
+                ["avg_diff_after"] = Math.Round(finalAvgDiff, 2),
+                ["sum_amber"] = Math.Round(sumA, 1),
+                ["sum_sapphire"] = Math.Round(sumB, 1),
+                ["players"] = _humanCount,
+            });
+        }
     }
 
     private static string GetControllerName(int idx) =>
@@ -838,12 +1065,50 @@ public class DeathmatchPlugin : DeadworksPluginBase
         var controller = args.Controller;
         if (controller == null) return;
 
+        int slot = controller.Slot;
+        int killsThisRound = _killsThisRound.GetValueOrDefault(controller.EntityIndex);
         _killsThisRound.Remove(controller.EntityIndex);
+        _roundStatsBySlot.Remove(slot);
         var pawn = controller.GetHeroPawn();
         if (pawn != null)
         {
             _lastDeathPos.Remove(pawn.EntityIndex);
             _invulnerableUntil.Remove(pawn.EntityIndex);
+        }
+
+        // 2/3 are the playable teams; spectators/unassigned don't count toward
+        // session state (matches the team filter in OnClientFullConnect).
+        bool countedPlayer = controller.TeamNum == 2 || controller.TeamNum == 3;
+        if (countedPlayer && _humanCount > 0) _humanCount--;
+        int remaining = _humanCount;
+
+        if (StatsClient.Enabled && countedPlayer)
+        {
+            int sessionDuration = 0;
+            if (_playerJoinTimes.TryGetValue(slot, out var joinTs))
+                sessionDuration = (int)(DateTime.UtcNow - joinTs).TotalSeconds;
+            var hashed = StatsClient.HashSteamId(controller.PlayerSteamId);
+            StatsClient.Capture("dm_player_left", hashed, new Dictionary<string, object?>
+            {
+                ["session_duration_s"] = sessionDuration,
+                ["round"] = _dmRoundNum,
+                ["kills_this_round"] = killsThisRound,
+                ["team"] = controller.TeamNum,
+                ["players_remaining"] = remaining,
+            });
+            SamplePlayerCount(remaining);
+        }
+        _playerJoinTimes.Remove(slot);
+
+        if (remaining == 0)
+        {
+            EmitSessionOutcome("abandoned");
+            ResetSessionStats();
+            _roundStatsBySlot.Clear();
+            // Next session starts at round 1 — keep the counter tied to the
+            // session lifecycle so the dm_session_outcome.rounds field stays
+            // meaningful.
+            _dmRoundNum = 0;
         }
     }
 
