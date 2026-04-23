@@ -172,6 +172,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         ResetSessionStats();
 
         // Match-clock and GameState left to the engine — the HUD clock runs natively.
+        // Patron death is intercepted in OnTakeDamage below so the engine never
+        // transitions m_eGameState to PostGame (which would kick all clients).
         // Empty-server cleanup (spawn-disable + trooper cull) is handled inside
         // OnClientDisconnect the moment the last player leaves — no polling interval.
     }
@@ -331,13 +333,13 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         });
     }
 
-    private void DisarmWaves(string reason)
+    private void DisarmWaves(string reason, bool cullTroopers = true)
     {
         _wavesActive = false;
         _pendingWaveTimer?.Cancel(); _pendingWaveTimer = null;
         _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
-        CullAllTroopers();
+        if (cullTroopers) CullAllTroopers();
         // Reset wave counter so the next session (new player joining later) starts
         // from a fresh onboarding ramp at wave 1, not mid-progression at wave N.
         _waveNum = 0;
@@ -346,7 +348,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // round-clear/victory/defeat paths already cleared via EmitRoundSummary,
         // so this is defensive for manual !stopwaves and no-player disarms.
         _roundStatsBySlot.Clear();
-        Console.WriteLine($"[TI] Wave scheduler paused ({reason}). Troopers culled, wave counter reset.");
+        Console.WriteLine($"[TI] Wave scheduler paused ({reason}). {(cullTroopers ? "Troopers culled, " : "Troopers kept alive, ")}wave counter reset.");
     }
 
     private void ScheduleNextWave()
@@ -376,8 +378,10 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _pendingWaveTimer = Timer.Once(((int)(postBurstDelaySeconds * 1000)).Milliseconds(), () =>
         {
             _pendingWaveTimer = null;
-            // Disarm resets _waveNum=0 and culls remaining troopers.
-            DisarmWaves($"round {_roundNum} complete");
+            // Disarm resets _waveNum=0 but leaves any live troopers alone —
+            // carrying them into the intermission/next round is deliberate so
+            // players can still fight leftovers during the 30s breather.
+            DisarmWaves($"round {_roundNum} complete", cullTroopers: false);
             _roundNum++;
             // Fresh seed for everyone currently on the server — new round, wave-1
             // catch-up (which is 0 bonus gold) will apply to next spawn ritual.
@@ -626,6 +630,34 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     [GameEventHandler("round_end")]
     public HookResult OnRoundEnd(RoundEndEvent args) => HookResult.Stop;
 
+    // Intercepts the killing blow on either Patron. Letting the Patron reach 0 HP
+    // causes the engine to flip m_eGameState → PostGame at the schema layer,
+    // which kicks every client and makes the server refuse joins until map
+    // reload. Zeroing the lethal damage + pinning HP to 1 avoids the death
+    // entirely; we call HandleVictory/HandleDefeat ourselves to run the
+    // cooldown → rearm flow. Non-lethal damage passes through so the HUD still
+    // shows Patron HP ticking down through the round.
+    public override HookResult OnTakeDamage(TakeDamageEvent args)
+    {
+        if (args.Entity.DesignerName != PatronDesigner) return HookResult.Continue;
+
+        // Once mode is over, Patron is invulnerable through the cooldown window
+        // so stray trooper hits can't re-trigger the defeat handler.
+        if (_modeOver)
+        {
+            args.Info.Damage = 0f;
+            return HookResult.Continue;
+        }
+
+        if (args.Entity.Health - args.Info.Damage > 0f) return HookResult.Continue;
+
+        args.Info.Damage = 0f;
+        args.Entity.Health = 1;
+        if (args.Entity.TeamNum == HumanTeam) HandleDefeat();
+        else                                   HandleVictory();
+        return HookResult.Continue;
+    }
+
     [GameEventHandler("entity_killed")]
     public HookResult OnEntityKilled(EntityKilledEvent args)
     {
@@ -633,12 +665,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         var killed = CBaseEntity.FromIndex(args.EntindexKilled);
         if (killed == null) return HookResult.Continue;
 
-        if (killed.DesignerName == PatronDesigner)
-        {
-            if (killed.TeamNum == HumanTeam) HandleDefeat();
-            else                              HandleVictory();
-            return HookResult.Continue;
-        }
+        // Patron "deaths" are handled in OnTakeDamage before the hit lands, so
+        // npc_barrack_boss never actually reaches entity_killed.
 
         // Enemy trooper/boss kill attribution — feeds the round summary.
         // Bounty mirrors the engine-paid formula (citadel_trooper_gold_reward
