@@ -167,7 +167,7 @@ signature abilities, 3s spawn invulnerability) are all **removed**.
 |---|---|
 | Starter capital | `StarterGold = 2500`, seeded **once per slot** via `HashSet<int>`. Respawn keeps your earned souls; disconnect clears the slot so reconnect re-seeds |
 | Abilities | All signature abilities at tier-0 on spawn. Players earn AP from trooper kills and spend through the normal upgrade UI |
-| Trooper bounty | `citadel_trooper_gold_reward = 70 + waveNum × 10` (wave 1 ≈ vanilla baseline ~80, gentle per-wave climb; deliberately below the earlier 120+15×N formula to tighten the progression economy) |
+| Trooper bounty | `citadel_trooper_gold_reward = 35 + waveNum × 5` (halved from the prior 70+10×N formula to compensate for the toughened HP curve below; vanilla baseline was ~80) |
 | Spawn protection | **Removed** — no invuln, no `OnTakeDamage` override, no `_invulnerableUntil` tracking. Death has weight |
 | Heal on spawn | Kept — full health on respawn (PvE forgiveness, not a progression cheat) |
 

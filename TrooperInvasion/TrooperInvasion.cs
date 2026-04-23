@@ -47,18 +47,18 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private const float FastWaveIntervalSeconds = 5f;
     private const int MinTrooperCap = 80;
     private const int MaxTrooperCap = 600;
-    // HP scaling capped to avoid bullet-sponges past ~R12. R1W1=1.0x, R2W1=1.5x,
-    // R3W1=2.0x, R5W10=3.3x, cap=6.0x.
-    private const float HealthScalePerRound = 0.5f;
-    private const float HealthScalePerWave = 0.03f;
-    private const float MaxHealthScale = 6f;
+    // HP scaling capped to avoid bullet-sponges past ~R12. R1W1=1.0x, R2W1=1.75x,
+    // R3W1=2.5x, R5W10=4.5x, cap=8.0x.
+    private const float HealthScalePerRound = 0.75f;
+    private const float HealthScalePerWave = 0.05f;
+    private const float MaxHealthScale = 8f;
     private readonly HashSet<int> _aliveEnemyTroopers = new();
     private static bool IsTrooperDesigner(string designer) =>
         designer == "npc_trooper" || designer == "npc_trooper_boss";
 
     // Must match engine-paid `citadel_trooper_gold_reward` (set per wave in
     // RunWave) or the round leaderboard drifts from deposited gold.
-    private static int TrooperGoldReward(int wave) => 70 + wave * 10;
+    private static int TrooperGoldReward(int wave) => 35 + wave * 5;
 
     private IHandle? _pendingWaveTimer;
     private IHandle? _pendingBurstEnd;
