@@ -43,8 +43,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // would be stuck in a silent server with no waves.
     private const float PostModeCooldownSeconds = 30f;
     private int _roundNum = 1;
-    private const float SlowWaveIntervalSeconds = 20f;
-    private const float FastWaveIntervalSeconds = 5f;
+    private const float SlowWaveIntervalSeconds = 10f;
+    private const float FastWaveIntervalSeconds = 2f;
     private const int MinTrooperCap = 80;
     private const int MaxTrooperCap = 600;
     // R1W1=1.3x, R1W10=4x, R2W1=4.3x, R2W10=7x, R3W10=10x, R5W10=16x, cap=32x (~R10W10).
