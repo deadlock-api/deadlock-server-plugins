@@ -610,8 +610,21 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
         if (args.Entity.Health - args.Info.Damage > 0f) return HookResult.Continue;
 
+        // Always swallow the lethal damage so the Patron never reaches 0 HP at
+        // the schema layer (see m_eGameState kick-on-death above).
         args.Info.Damage = 0f;
         args.Entity.Health = 1;
+
+        // But only declare victory/defeat when a real player or trooper landed
+        // the killing blow. Destroying a tier3 (Base Guardian) or tier2
+        // (Walker) triggers an engine-scripted "weaken Patron" damage event
+        // whose magnitude exceeds current Patron HP — without this gate that
+        // event was tripping a false victory with the Patron still standing.
+        var attacker = args.Info.Attacker;
+        bool realKill = attacker != null &&
+            (attacker.As<CCitadelPlayerPawn>() != null || IsTrooperDesigner(attacker.DesignerName));
+        if (!realKill) return HookResult.Continue;
+
         EndMode(victory: args.Entity.TeamNum != HumanTeam);
         return HookResult.Continue;
     }
