@@ -53,7 +53,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private const float HealthScalePerWave = 0.03f;
     private const float MaxHealthScale = 6f;
     private readonly HashSet<int> _aliveEnemyTroopers = new();
-    private static readonly string[] _trooperDesigners = { "npc_trooper", "npc_trooper_boss" };
     private static bool IsTrooperDesigner(string designer) =>
         designer == "npc_trooper" || designer == "npc_trooper_boss";
 
@@ -66,6 +65,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private const int VoteSkipPercent = 30;
     private readonly HashSet<int> _voteSkipSlots = new();
     private bool _wavesActive;
+    // Mirrors citadel_trooper_spawn_enabled so OnEntitySpawned's cap-hit path
+    // (and other "turn off" paths) don't burn an ExecuteCommand dispatch per
+    // redundant write. ConVar.Find().SetInt crashes mid-game — see the ConVar
+    // mutation gotcha in the plugin wiki page — so ExecuteCommand is the only
+    // runtime-safe path and we gate it with this bool.
+    private bool _spawnEnabled;
 
     private int _waveNum;
     private bool _modeOver;
@@ -75,7 +80,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private int _humanCount;
 
     // Null _sessionStartUtc means no active session — gates session-outcome
-    // emission so HandleDefeat → last-disconnect doesn't double-fire.
+    // emission so EndMode → last-disconnect doesn't double-fire.
     private DateTime? _sessionStartUtc;
     private int _peakPlayers;
     private long _playerCountSampleSum;
@@ -124,6 +129,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // Managed state lives on the plugin instance and survives map change.
         _wavesActive = false;
         _modeOver = false;
+        _spawnEnabled = false;
         _waveNum = 0;
         _roundNum = 1;
         _humanCount = 0;
@@ -162,7 +168,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private void CullAllTroopers()
     {
         // Snapshot the enumeration first — Remove mutates the entity list.
-        var victims = Entities.All.Where(e => _trooperDesigners.Contains(e.DesignerName)).Select(e => e.EntityIndex).ToArray();
+        var victims = Entities.All.Where(e => IsTrooperDesigner(e.DesignerName)).Select(e => e.EntityIndex).ToArray();
         foreach (var idx in victims)
         {
             Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
@@ -198,7 +204,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     }
 
     // Single-shot: further calls after outcome is emitted become no-ops because
-    // _sessionStartUtc is cleared. Prevents HandleDefeat → last-disconnect
+    // _sessionStartUtc is cleared. Prevents EndMode → last-disconnect
     // double-emission when the defeat cascade triggers players to leave.
     private void EmitSessionOutcome(string outcome)
     {
@@ -291,6 +297,23 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private float ComputeWaveInterval(int humans) =>
         LerpByPlayers(humans, SlowWaveIntervalSeconds, FastWaveIntervalSeconds);
 
+    private void SetWaveTimer(double seconds, Action body)
+    {
+        _pendingWaveTimer?.Cancel();
+        _pendingWaveTimer = Timer.Once(seconds.Seconds(), () =>
+        {
+            _pendingWaveTimer = null;
+            body();
+        });
+    }
+
+    private void SetSpawnEnabled(bool on)
+    {
+        if (_spawnEnabled == on) return;
+        _spawnEnabled = on;
+        Server.ExecuteCommand($"citadel_trooper_spawn_enabled {(on ? 1 : 0)}");
+    }
+
     private void ArmWaves()
     {
         if (_modeOver || _wavesActive) return;
@@ -298,18 +321,15 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         Console.WriteLine($"[TI] Wave scheduler armed (round {_roundNum}).");
         AnnounceHud($"ROUND {_roundNum}", $"First wave in {FirstWaveGraceSeconds:0}s — defend the Patron!");
         EnsureSessionStarted();
-        StatsClient.Capture("ti_round_started", null, new Dictionary<string, object?>
+        if (StatsClient.Enabled)
         {
-            ["round"] = _roundNum,
-            ["players"] = HumanPlayerCount(),
-        });
-        _pendingWaveTimer?.Cancel();
-        _pendingWaveTimer = Timer.Once(((double)FirstWaveGraceSeconds).Seconds(), () =>
-        {
-            _pendingWaveTimer = null;
-            if (!_wavesActive) return;
-            RunWave();
-        });
+            StatsClient.Capture("ti_round_started", null, new Dictionary<string, object?>
+            {
+                ["round"] = _roundNum,
+                ["players"] = HumanPlayerCount(),
+            });
+        }
+        SetWaveTimer(FirstWaveGraceSeconds, () => { if (_wavesActive) RunWave(); });
     }
 
     private void DisarmWaves(string reason, bool cullTroopers = true)
@@ -317,7 +337,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _wavesActive = false;
         _pendingWaveTimer?.Cancel(); _pendingWaveTimer = null;
         _pendingBurstEnd?.Cancel(); _pendingBurstEnd = null;
-        Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+        SetSpawnEnabled(false);
         if (cullTroopers) CullAllTroopers();
         // Reset wave counter so the next session (new player joining later) starts
         // from a fresh onboarding ramp at wave 1, not mid-progression at wave N.
@@ -334,13 +354,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     {
         if (_modeOver || !_wavesActive) return;
         float interval = ComputeWaveInterval(HumanPlayerCount());
-        _pendingWaveTimer?.Cancel();
-        _pendingWaveTimer = Timer.Once(((double)interval).Seconds(), () =>
-        {
-            _pendingWaveTimer = null;
-            if (!_wavesActive) return;
-            RunWave();
-        });
+        SetWaveTimer(interval, () => { if (_wavesActive) RunWave(); });
     }
 
     private void BeginIntermission(float postBurstDelaySeconds)
@@ -352,11 +366,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         EmitRoundSummary("cleared");
         Console.WriteLine($"[TI] Round {_roundNum} complete at wave {completed}. Intermission {IntermissionSeconds:0}s.");
 
-        // Let the burst window finish before culling + announcing intermission start.
-        _pendingWaveTimer?.Cancel();
-        _pendingWaveTimer = Timer.Once(((double)postBurstDelaySeconds).Seconds(), () =>
+        SetWaveTimer(postBurstDelaySeconds, () =>
         {
-            _pendingWaveTimer = null;
             // Disarm resets _waveNum=0 but leaves any live troopers alone —
             // carrying them into the intermission/next round is deliberate so
             // players can still fight leftovers during the 30s breather.
@@ -366,9 +377,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             // catch-up (which is 0 bonus gold) will apply to next spawn ritual.
             _starterGoldSeeded.Clear();
 
-            _pendingWaveTimer = Timer.Once(((double)IntermissionSeconds).Seconds(), () =>
+            SetWaveTimer(IntermissionSeconds, () =>
             {
-                _pendingWaveTimer = null;
                 if (HumanPlayerCount() > 0) ArmWaves();
                 else Console.WriteLine("[TI] Intermission ended with empty server — staying dormant until a player joins.");
             });
@@ -382,10 +392,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // ArmWaves calls no-op until we explicitly unlatch it below.
         DisarmWaves($"mode over: {outcome}");
 
-        _pendingWaveTimer?.Cancel();
-        _pendingWaveTimer = Timer.Once(((double)PostModeCooldownSeconds).Seconds(), () =>
+        SetWaveTimer(PostModeCooldownSeconds, () =>
         {
-            _pendingWaveTimer = null;
             // Full session reset mirroring the last-player-disconnect path, minus
             // _playerJoinTimes (remaining humans' session durations keep counting
             // from their original join — their connection never dropped).
@@ -495,17 +503,20 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         float healthScale = ComputeHealthScale();
 
         SamplePlayerCount(humans);
-        StatsClient.Capture("ti_wave_started", null, new Dictionary<string, object?>
+        if (StatsClient.Enabled)
         {
-            ["wave"] = _waveNum,
-            ["round"] = _roundNum,
-            ["players"] = humans,
-            ["deaths_prev_wave"] = _deathsPrevWave,
-            ["alive_enemy_troopers"] = alive,
-            ["active_lanes"] = activeLanes,
-            ["gold_reward"] = goldReward,
-            ["health_scale"] = Math.Round(healthScale, 2),
-        });
+            StatsClient.Capture("ti_wave_started", null, new Dictionary<string, object?>
+            {
+                ["wave"] = _waveNum,
+                ["round"] = _roundNum,
+                ["players"] = humans,
+                ["deaths_prev_wave"] = _deathsPrevWave,
+                ["alive_enemy_troopers"] = alive,
+                ["active_lanes"] = activeLanes,
+                ["gold_reward"] = goldReward,
+                ["health_scale"] = Math.Round(healthScale, 2),
+            });
+        }
         _deathsPrevWave = _deathsThisWave;
         _deathsThisWave = 0;
 
@@ -514,7 +525,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         Server.ExecuteCommand($"citadel_trooper_squad_size {MaxSquadSize}");
         Server.ExecuteCommand($"citadel_trooper_gold_reward {goldReward}");
         Server.ExecuteCommand($"citadel_active_lane {LaneBitmask(activeLanes)}");
-        Server.ExecuteCommand("citadel_trooper_spawn_enabled 1");
+        SetSpawnEnabled(true);
 
         AnnounceHud(
             $"WAVE {_waveNum} / {RoundLength}",
@@ -525,7 +536,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _pendingBurstEnd = Timer.Once(((double)burstSeconds).Seconds(), () =>
         {
             _pendingBurstEnd = null;
-            Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+            SetSpawnEnabled(false);
         });
 
         // Round boundary: trigger intermission instead of scheduling another wave.
@@ -564,7 +575,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _aliveEnemyTroopers.Add(idx);
         ScaleTrooperHealth(ent);
         if (_aliveEnemyTroopers.Count >= ComputeTrooperCap(humans))
-            Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+            SetSpawnEnabled(false);
     }
 
     public override void OnEntityDeleted(EntityDeletedEvent args)
@@ -582,8 +593,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // causes the engine to flip m_eGameState → PostGame at the schema layer,
     // which kicks every client and makes the server refuse joins until map
     // reload. Zeroing the lethal damage + pinning HP to 1 avoids the death
-    // entirely; we call HandleVictory/HandleDefeat ourselves to run the
-    // cooldown → rearm flow. Non-lethal damage passes through so the HUD still
+    // entirely; we call EndMode ourselves to run the cooldown → rearm flow.
+    // Non-lethal damage passes through so the HUD still
     // shows Patron HP ticking down through the round.
     public override HookResult OnTakeDamage(TakeDamageEvent args)
     {
@@ -601,8 +612,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
         args.Info.Damage = 0f;
         args.Entity.Health = 1;
-        if (args.Entity.TeamNum == HumanTeam) HandleDefeat();
-        else                                   HandleVictory();
+        EndMode(victory: args.Entity.TeamNum != HumanTeam);
         return HookResult.Continue;
     }
 
@@ -653,24 +663,21 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         return HookResult.Continue;
     }
 
-    private void EndMode(string outcome, string title, string description)
+    private void EndMode(bool victory)
     {
         _modeOver = true;
-        Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
+        SetSpawnEnabled(false);
+        string outcome = victory ? "victory" : "defeat";
+        string title = victory ? "VICTORY!" : "DEFEAT";
+        string description = victory
+            ? $"Sapphire Patron destroyed — survived {_waveNum} waves. Fresh round in {PostModeCooldownSeconds:0}s."
+            : $"Amber Patron has fallen at wave {_waveNum}. Fresh round in {PostModeCooldownSeconds:0}s.";
         AnnounceHud(title, description);
         Console.WriteLine($"[TI] {outcome.ToUpperInvariant()} at wave {_waveNum}");
         EmitRoundSummary(outcome);
         EmitSessionOutcome(outcome);
         BeginPostModeCooldown(outcome);
     }
-
-    private void HandleVictory() =>
-        EndMode("victory", "VICTORY!",
-            $"Sapphire Patron destroyed — survived {_waveNum} waves. Fresh round in {PostModeCooldownSeconds:0}s.");
-
-    private void HandleDefeat() =>
-        EndMode("defeat", "DEFEAT",
-            $"Amber Patron has fallen at wave {_waveNum}. Fresh round in {PostModeCooldownSeconds:0}s.");
 
     public override void OnClientFullConnect(ClientFullConnectEvent args)
     {
@@ -688,14 +695,17 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         controller.ChangeTeam(HumanTeam);
         _humanCount++;
 
-        var available = Enum.GetValues<Heroes>()
-            .Select(h => (hero: h, count: usage.GetValueOrDefault(h.GetHeroData()?.HeroID ?? 0), inGame: h.GetHeroData()?.AvailableInGame == true))
-            .Where(x => x.inGame)
-            .ToArray();
-
-        int min = available.Min(x => x.count);
-        var leastPresent = available.Where(x => x.count == min).Select(x => x.hero).ToArray();
-        var hero = leastPresent[Random.Shared.Next(leastPresent.Length)];
+        int minCount = int.MaxValue;
+        var leastUsed = new List<Heroes>();
+        foreach (var h in Enum.GetValues<Heroes>())
+        {
+            var data = h.GetHeroData();
+            if (data?.AvailableInGame != true) continue;
+            int count = usage.GetValueOrDefault(data.HeroID);
+            if (count < minCount) { minCount = count; leastUsed.Clear(); leastUsed.Add(h); }
+            else if (count == minCount) leastUsed.Add(h);
+        }
+        var hero = leastUsed[Random.Shared.Next(leastUsed.Count)];
         controller.SelectHero(hero);
 
         Console.WriteLine($"[TI] Slot {args.Slot} -> team {HumanTeam}, hero {hero.ToHeroName()}");
