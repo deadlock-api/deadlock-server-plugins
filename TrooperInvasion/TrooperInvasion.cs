@@ -61,7 +61,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
     private IHandle? _pendingWaveTimer;
     private IHandle? _pendingBurstEnd;
-    private const int VoteSkipPercent = 30;
+    private const int VoteSkipPercent = 20;
     private readonly HashSet<int> _voteSkipSlots = new();
     private bool _wavesActive;
     // Mirrors citadel_trooper_spawn_enabled so OnEntitySpawned's cap-hit path
@@ -365,22 +365,34 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         EmitRoundSummary("cleared");
         Console.WriteLine($"[TI] Round {_roundNum} complete at wave {completed}. Intermission {IntermissionSeconds:0}s.");
 
-        SetWaveTimer(postBurstDelaySeconds, () =>
+        if (postBurstDelaySeconds <= 0f)
         {
-            // Disarm resets _waveNum=0 but leaves any live troopers alone —
-            // carrying them into the intermission/next round is deliberate so
-            // players can still fight leftovers during the 30s breather.
-            DisarmWaves($"round {_roundNum} complete", cullTroopers: false);
-            _roundNum++;
-            // Fresh seed for everyone currently on the server — new round, wave-1
-            // catch-up (which is 0 bonus gold) will apply to next spawn ritual.
-            _starterGoldSeeded.Clear();
+            FinishRound();
+        }
+        else
+        {
+            SetWaveTimer(postBurstDelaySeconds, FinishRound);
+        }
+    }
 
-            SetWaveTimer(IntermissionSeconds, () =>
-            {
-                if (HumanPlayerCount() > 0) ArmWaves();
-                else Console.WriteLine("[TI] Intermission ended with empty server — staying dormant until a player joins.");
-            });
+    // Disarm + advance round + queue intermission. Pulled out of BeginIntermission
+    // so manual round-end paths (voteskip) can call it directly without going
+    // through a 0-delay timer hop, which was racy and sometimes silently no-op'd.
+    private void FinishRound()
+    {
+        // Disarm resets _waveNum=0 but leaves any live troopers alone —
+        // carrying them into the intermission/next round is deliberate so
+        // players can still fight leftovers during the 30s breather.
+        DisarmWaves($"round {_roundNum} complete", cullTroopers: false);
+        _roundNum++;
+        // Fresh seed for everyone currently on the server — new round, wave-1
+        // catch-up (which is 0 bonus gold) will apply to next spawn ritual.
+        _starterGoldSeeded.Clear();
+
+        SetWaveTimer(IntermissionSeconds, () =>
+        {
+            if (HumanPlayerCount() > 0) ArmWaves();
+            else Console.WriteLine("[TI] Intermission ended with empty server — staying dormant until a player joins.");
         });
     }
 
@@ -817,7 +829,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         "[TI] !startwaves — arm wave engine + begin scheduler",
         "[TI] !stopwaves — halt scheduler (and close spawn window)",
         "[TI] !nextwave — trigger one wave immediately (dev)",
-        "[TI] !voteskip — vote to end the current round (>30% of players required)",
+        "[TI] !voteskip — vote to end the current round (>20% of players required)",
     };
 
     [Command("help", Description = "Show available TrooperInvasion commands")]
@@ -859,34 +871,40 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _wavesActive = wasActive;
     }
 
-    [Command("voteskip", Description = "Vote to end the current round early (>30% of players)")]
+    [Command("voteskip", Description = "Vote to end the current round early (>20% of players)")]
     public void CmdVoteSkip(CCitadelPlayerController caller)
     {
-        if (_modeOver) throw new CommandException("[TI] Mode is over.");
-        if (!_wavesActive) throw new CommandException("[TI] No active round to skip.");
+        Console.WriteLine($"[TI] !voteskip from slot {caller.Slot} (modeOver={_modeOver}, wavesActive={_wavesActive}, round={_roundNum}, wave={_waveNum})");
+
+        if (_modeOver) throw new CommandException("[TI] Mode is over — wait for the next round.");
+        if (!_wavesActive) throw new CommandException("[TI] No active round to skip (intermission or pre-arm).");
 
         bool isFirst = _voteSkipSlots.Count == 0;
         if (!_voteSkipSlots.Add(caller.Slot))
             throw new CommandException("[TI] You already voted to skip this round.");
 
-        int humans = HumanPlayerCount();
+        int humans = Math.Max(1, HumanPlayerCount());
         int votes = _voteSkipSlots.Count;
         string who = caller.PlayerName ?? "A player";
 
         if (isFirst)
             Chat.PrintToChatAll($"[TI] {who} wants to skip round {_roundNum} — type !voteskip to agree (>{VoteSkipPercent}% needed)");
 
-        int percent = humans > 0 ? votes * 100 / humans : 0;
+        int percent = votes * 100 / humans;
         Chat.PrintToChatAll($"[TI] Vote skip: {votes}/{humans} ({percent}%)");
+        Console.WriteLine($"[TI] vote tally: {votes}/{humans} ({percent}%) threshold>{VoteSkipPercent}%");
 
-        // Strict > 30% — 1/3 passes, 1/4 doesn't.
         if (votes * 100 > humans * VoteSkipPercent)
         {
             Chat.PrintToChatAll($"[TI] Vote skip passed — ending round {_roundNum}");
-            // Clear immediately so BeginIntermission's DisarmWaves doesn't
-            // re-process an already-tallied ballot after the round boundary.
+            Console.WriteLine($"[TI] Vote skip threshold reached — finishing round {_roundNum}");
+            // Clear immediately so DisarmWaves doesn't re-process an already-
+            // tallied ballot after the round boundary.
             _voteSkipSlots.Clear();
-            BeginIntermission(0f);
+            // Direct path — no 0-delay timer hop. Voteskip explicitly drops
+            // leftover troopers so the intermission isn't crowded by carry-over.
+            CullAllTroopers();
+            FinishRound();
         }
     }
 
