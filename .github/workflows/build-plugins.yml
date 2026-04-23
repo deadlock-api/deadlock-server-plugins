@@ -37,6 +37,10 @@ jobs:
               - 'HeroSelect/**'
             HealOnSpawn:
               - 'HealOnSpawn/**'
+            DisconnectCleanup:
+              - 'DisconnectCleanup/**'
+            HeroSelectOnNextSpawn:
+              - 'HeroSelectOnNextSpawn/**'
 
       - name: Compute plugin matrix
         id: compute

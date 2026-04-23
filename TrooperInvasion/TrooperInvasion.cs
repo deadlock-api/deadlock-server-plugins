@@ -906,10 +906,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         }
         _playerJoinTimes.Remove(slot);
 
-        Server.ExecuteCommand("sv_cheats 1");
-        Server.ExecuteCommand("citadel_kick_disconnected_players");
-        Server.ExecuteCommand("sv_cheats 0");
-
         // Last human leaving: full session reset on top of DisarmWaves.
         if (remaining == 0)
         {
