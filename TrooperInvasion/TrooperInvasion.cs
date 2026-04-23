@@ -449,7 +449,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         AnnounceHud(
             $"WAVE {_waveNum} / {RoundLength}",
             $"Round {_roundNum} — {activeLanes} lane{(activeLanes == 1 ? "" : "s")}, bounty {goldReward}, next in {interval:0}s");
-        Chat.PrintToChatAll($"[TI] R{_roundNum} W{_waveNum}/{RoundLength} — bounty {goldReward} (next in {interval:0}s, lanes {activeLanes}, cap {cap})");
         Console.WriteLine($"[TI] Round {_roundNum} Wave {_waveNum}: gold={goldReward} humans={humans} burst={burstSeconds:0.0}s nextIn={interval:0.0}s lanes={activeLanes} cap={cap}");
 
         _pendingBurstEnd?.Cancel();
