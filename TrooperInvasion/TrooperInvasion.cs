@@ -46,6 +46,10 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     // across rounds; only the horde counter resets.
     private const int RoundLength = 10;
     private const float IntermissionSeconds = 30f;
+    // Post-victory/defeat cooldown before the mode auto-rearms round 1. Without
+    // this, _modeOver latches true until the last human disconnects, leaving
+    // survivors (and any new joiners) stuck in a silent server with no waves.
+    private const float PostModeCooldownSeconds = 30f;
     private int _roundNum = 1;
     private const float SlowWaveIntervalSeconds = 20f;
     private const float FastWaveIntervalSeconds = 5f;
@@ -293,6 +297,42 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         });
     }
 
+    private void BeginPostModeCooldown(string outcome)
+    {
+        // Clean up wave scheduler state (spawn off, cull troopers, cancel timers,
+        // _waveNum=0). _modeOver stays true through the cooldown so new joiners'
+        // ArmWaves calls no-op until we explicitly unlatch it below.
+        DisarmWaves($"mode over: {outcome}");
+
+        _pendingWaveTimer?.Cancel();
+        _pendingWaveTimer = Timer.Once(((int)(PostModeCooldownSeconds * 1000)).Milliseconds(), () =>
+        {
+            _pendingWaveTimer = null;
+            // Full session reset mirroring the last-player-disconnect path, minus
+            // _playerJoinTimes (remaining humans' session durations keep counting
+            // from their original join — their connection never dropped).
+            _modeOver = false;
+            _roundNum = 1;
+            _waveNum = 0;
+            _starterGoldSeeded.Clear();
+            _peakPlayers = 0;
+            _playerCountSampleSum = 0;
+            _playerCountSampleCount = 0;
+            _deathsThisWave = 0;
+            _deathsPrevWave = 0;
+
+            if (HumanPlayerCount() > 0)
+            {
+                Console.WriteLine("[TI] Post-mode cooldown ended — rearming round 1.");
+                ArmWaves();
+            }
+            else
+            {
+                Console.WriteLine("[TI] Post-mode cooldown ended on empty server — staying dormant until a player joins.");
+            }
+        });
+    }
+
     private static void AnnounceHud(string title, string description)
     {
         // HUD-toast style announcement shown to every player. Used for
@@ -509,18 +549,20 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     {
         _modeOver = true;
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
-        AnnounceHud("VICTORY!", $"Sapphire Patron destroyed — survived {_waveNum} waves");
+        AnnounceHud("VICTORY!", $"Sapphire Patron destroyed — survived {_waveNum} waves. Fresh round in {PostModeCooldownSeconds:0}s.");
         Console.WriteLine($"[TI] VICTORY at wave {_waveNum}");
         EmitSessionOutcome("victory");
+        BeginPostModeCooldown("victory");
     }
 
     private void HandleDefeat()
     {
         _modeOver = true;
         Server.ExecuteCommand("citadel_trooper_spawn_enabled 0");
-        AnnounceHud("DEFEAT", $"Amber Patron has fallen at wave {_waveNum}");
+        AnnounceHud("DEFEAT", $"Amber Patron has fallen at wave {_waveNum}. Fresh round in {PostModeCooldownSeconds:0}s.");
         Console.WriteLine($"[TI] DEFEAT at wave {_waveNum}");
         EmitSessionOutcome("defeat");
+        BeginPostModeCooldown("defeat");
     }
 
     public override void OnClientFullConnect(ClientFullConnectEvent args)
