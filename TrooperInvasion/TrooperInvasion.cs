@@ -47,11 +47,10 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private const float FastWaveIntervalSeconds = 5f;
     private const int MinTrooperCap = 80;
     private const int MaxTrooperCap = 600;
-    // HP scaling capped to avoid bullet-sponges past ~R12. R1W1=1.0x, R2W1=1.75x,
-    // R3W1=2.5x, R5W10=4.5x, cap=8.0x.
-    private const float HealthScalePerRound = 0.75f;
-    private const float HealthScalePerWave = 0.05f;
-    private const float MaxHealthScale = 8f;
+    // R1W1=1.3x, R1W10=4x, R2W1=4.3x, R2W10=7x, R3W10=10x, R5W10=16x, cap=32x (~R10W10).
+    private const float HealthScalePerRound = 3f;
+    private const float HealthScalePerWave = 0.3f;
+    private const float MaxHealthScale = 32f;
     private readonly HashSet<int> _aliveEnemyTroopers = new();
     private static bool IsTrooperDesigner(string designer) =>
         designer == "npc_trooper" || designer == "npc_trooper_boss";
