@@ -756,25 +756,20 @@ public class DeathmatchPlugin : DeadworksPluginBase
         return new List<Heroes>();
     }
 
-    [ChatCommand("!help")]
-    public HookResult OnHelpCommand(ChatCommandContext ctx)
+    [Command("help", Description = "Show available Deathmatch commands")]
+    public void CmdHelp(CCitadelPlayerController caller)
     {
         foreach (var line in _helpLines)
-            Chat.PrintToChat(ctx.Message.SenderSlot, line);
-        return HookResult.Handled;
+            Chat.PrintToChat(caller.Slot, line);
     }
 
-    [ChatCommand("!stuck")]
-    [ChatCommand("!suicide")]
-    public HookResult OnStuckCommand(ChatCommandContext ctx)
+    [Command("stuck", Description = "Kill yourself to respawn")]
+    [Command("suicide", Description = "Kill yourself to respawn")]
+    public void CmdStuck(CCitadelPlayerController caller)
     {
-        int slot = ctx.Message.SenderSlot;
-        var pawn = ctx.Controller?.GetHeroPawn()?.As<CCitadelPlayerPawn>();
+        var pawn = caller.GetHeroPawn()?.As<CCitadelPlayerPawn>();
         if (pawn == null || !pawn.IsAlive)
-        {
-            Chat.PrintToChat(slot, "[DM] Not alive.");
-            return HookResult.Handled;
-        }
+            throw new CommandException("[DM] Not alive.");
 
         // Spawn protection zeroes damage and sets Invulnerable modifier bits — clear both so
         // the suicide damage actually kills the player instead of being absorbed.
@@ -786,7 +781,6 @@ public class DeathmatchPlugin : DeadworksPluginBase
             mp.SetModifierState(EModifierState.BulletInvulnerable, false);
         }
         pawn.Hurt(999_999f);
-        return HookResult.Handled;
     }
 
     private static void EnsureRankQueued(uint accountId)
@@ -980,9 +974,10 @@ public class DeathmatchPlugin : DeadworksPluginBase
         {
             _lastDeathPos.Remove(pawn.EntityIndex);
             _invulnerableUntil.Remove(pawn.EntityIndex);
-            pawn.Remove();
         }
-        controller.Remove();
+        Server.ExecuteCommand("sv_cheats 1");
+        Server.ExecuteCommand("citadel_kick_disconnected_players");
+        Server.ExecuteCommand("sv_cheats 0");
     }
 
     public override void OnUnload()

@@ -21,12 +21,14 @@ sources:
   - knowledge-base/raw/notes/sessions-2026-04-21/deathmatch-e6b640b7.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deathmatch-fa5d1d7e.md
   - knowledge-base/raw/notes/sessions-2026-04-21/deathmatch-73f32122.md
+  - knowledge-base/raw/notes/2026-04-23-citadel-kick-disconnected-players.md
 related:
   - "[[source-2-engine]]"
   - "[[deathmatch]]"
+  - "[[trooper-invasion]]"
   - "[[deadworks-runtime]]"
 created: 2026-04-21
-updated: 2026-04-21
+updated: 2026-04-23
 confidence: high
 ---
 
@@ -215,6 +217,53 @@ its initial state yet.
 - `friendly_fire`: `mp_friendlyfire = 0` is default; stock behaviour blocks
   same-team bullet damage, but ability AoE/grenades/debuff pulses are NOT
   guaranteed to respect team — plugins must add explicit checks.
+
+## Player disconnect cleanup
+
+**`citadel_kick_disconnected_players`** is the engine's native concommand
+for clearing out player slots whose clients are no longer connected.
+`server.dll` help text (verbatim):
+
+> Clear out all players who aren't connected, removing them from any teams
+
+It is a verb/concommand, not a standing convar — invoke it imperatively
+via `Server.ExecuteCommand`. Flag category unconfirmed; lives adjacent
+to cheat/development concommands in the string table, so bracket with
+`sv_cheats 1/0` in the same style as `FlexSlotUnlock.cs:29-31`:
+
+```csharp
+Server.ExecuteCommand("sv_cheats 1");
+Server.ExecuteCommand("citadel_kick_disconnected_players");
+Server.ExecuteCommand("sv_cheats 0");
+```
+
+Current repo pattern does this work manually inside plugin
+`OnClientDisconnect` handlers — [[deathmatch|Deathmatch]]
+(`Deathmatch.cs:983-985`) and [[trooper-invasion|TrooperInvasion]]
+(`TrooperInvasion.cs:899-902`) both call `pawn.Remove()` +
+`controller.Remove()` per disconnecting slot. The native convar is a
+candidate replacement for just those two lines — the help text's "and
+removing them from any teams" suggests it also touches the team roster
+side, which the manual path does not do explicitly. Untested as of
+2026-04-23.
+
+[[lock-timer|LockTimer]] `OnClientDisconnect` only clears plugin-
+internal dicts (engine per-slot state, HUD maps); the convar doesn't
+apply there. [[status-poker]], FlexSlotUnlock, HealOnSpawn, HeroSelect,
+Hostname, and TeamChangeBlock do not define `OnClientDisconnect` at all.
+
+Other potential uses (not currently implemented):
+
+- Periodic janitor (`Timer.Every(…)`) to catch any slot the engine
+  marks disconnected but managed `OnClientDisconnect` missed.
+- Round-reset sweep — e.g. in TrooperInvasion after
+  `DisarmWaves("last player disconnected")` at `TrooperInvasion.cs:910`.
+- `OnStartupServer` defensive call.
+
+Caveats: it's a bulk sweep (scans all slots) so per-disconnect
+invocation still does full work; FCVAR flags need verification on first
+use; unknown whether it re-fires any `player_*` events that plugin
+hooks might observe.
 
 ## Pause ConVars (server.dll)
 

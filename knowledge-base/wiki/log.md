@@ -8,6 +8,48 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-04-23] — catalogue citadel_kick_disconnected_players
+
+- **Operation:** ingest (engine-API catalogue + plugin applicability pass)
+- **Source:** `raw/notes/2026-04-23-citadel-kick-disconnected-players.md`
+- **Pages updated:** `concepts/deadlock-game.md` — new "Player disconnect
+  cleanup" section (between Flex-slot mechanics and Pause ConVars)
+  describing the concommand, safe invocation idiom, and current
+  per-plugin applicability. Source added; `related:` gains
+  `[[trooper-invasion]]`; `updated:` bumped. `index.md` last-ingest line
+  replaced.
+- **Key findings:**
+  - **`citadel_kick_disconnected_players` exists** in `server.dll`. Help
+    string (verbatim): *"Clear out all players who aren't connected,
+    removing them from any teams"*. Confirmed by `strings -n 8
+    game/server.dll` (custom-server build).
+  - **It's a concommand, not a standing convar** — imperative "run-once
+    to sweep". Flag category unconfirmed from strings alone; sits next
+    to `citadel_guide_bot_say` and cinematic-restart in the dump, so
+    safest invocation is the repo's existing `sv_cheats 1 / … /
+    sv_cheats 0` bracket (per `FlexSlotUnlock.cs:29-31`) via
+    `Server.ExecuteCommand` (not `ConVar.Find().Set*`).
+  - **Deathmatch and TrooperInvasion could substitute this for the
+    manual `pawn.Remove() + controller.Remove()` pair** inside their
+    `OnClientDisconnect` handlers (`Deathmatch.cs:983-985`,
+    `TrooperInvasion.cs:899-902`). The help text's "removing them from
+    any teams" hints at extra team-roster bookkeeping the manual path
+    doesn't do explicitly. Not swapped in this pass — catalogue only;
+    would want a test harness to confirm no regressions.
+  - **LockTimer `OnClientDisconnect` does not apply** — it only clears
+    plugin-internal dicts (engine per-slot state, HUD maps), no entity
+    `Remove()` calls.
+  - **StatusPoker, FlexSlotUnlock, HealOnSpawn, HeroSelect, Hostname,
+    TeamChangeBlock do not define `OnClientDisconnect`** — the concommand
+    is not relevant to them.
+  - **Other potential uses (unimplemented)**: periodic janitor via
+    `Timer.Every`, round-reset sweep in TrooperInvasion after
+    `DisarmWaves("last player disconnected")`, or defensive
+    `OnStartupServer` call.
+- **Caveats:** FCVAR flags unverified; bulk sweep means per-disconnect
+  invocation still scans all slots; event re-entrancy unknown.
+- **Contradictions flagged:** none.
+
 ## [2026-04-23] — boss-wave native crash; boss waves removed from TrooperInvasion
 
 - **Operation:** ingest (bug-fix + feature-removal finding)

@@ -5,7 +5,19 @@ created: 2026-04-21
 updated: 2026-04-23
 ---
 
-_Last ingest: 2026-04-23 — **TrooperInvasion boss waves removed**:
+_Last ingest: 2026-04-23 — **`citadel_kick_disconnected_players`
+catalogued**: engine-native concommand ("Clear out all players who
+aren't connected, removing them from any teams") added to
+[[deadlock-game]]. Candidate replacement for the manual
+`pawn.Remove() + controller.Remove()` pair in
+[[deathmatch]]/[[trooper-invasion]] `OnClientDisconnect`. [[lock-timer]]
+unaffected (only clears plugin-internal state). Other plugins
+(StatusPoker, FlexSlotUnlock, HealOnSpawn, HeroSelect, Hostname,
+TeamChangeBlock) have no `OnClientDisconnect` and are not applicable.
+Safest invocation = `sv_cheats 1 / citadel_kick_disconnected_players /
+sv_cheats 0` via `Server.ExecuteCommand`. Untested._
+
+_Prev ingest: 2026-04-23 — **TrooperInvasion boss waves removed**:
 `CBaseEntity.CreateByDesignerName("npc_trooper_boss") + Spawn()` with
 null `CEntityKeyValues` crashed the server natively on the first boss
 spawn. Lane-AI NPCs need `m_iLane` + squad + navmesh region wired in via
