@@ -839,6 +839,7 @@ public class DeathmatchPlugin : DeadworksPluginBase
         "[DM] !help — show this message",
         "[DM] !hero <name> — queue hero swap for next respawn (fuzzy match, e.g. !hero grey -> Grey Talon)",
         "[DM] !stuck / !suicide — kill yourself to respawn",
+        "[DM] !feedback <message> — send feedback to the server admins",
     };
 
     [Command("help", Description = "Show available Deathmatch commands")]

@@ -830,6 +830,7 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         "[TI] !stopwaves — halt scheduler (and close spawn window)",
         "[TI] !nextwave — trigger one wave immediately (dev)",
         "[TI] !voteskip — vote to end the current round (>20% of players required)",
+        "[TI] !feedback <message> — send feedback to the server admins",
     };
 
     [Command("help", Description = "Show available TrooperInvasion commands")]
