@@ -7,6 +7,7 @@ sources:
   - raw/notes/2026-04-23-entity-io-api.md
   - raw/notes/2026-04-23-trace-api.md
   - raw/notes/2026-04-23-soundevent-builder.md
+  - knowledge-base/raw/articles/deadworks-0.4.6-release.md
   - ../deadworks/managed/DeadworksManaged.Api/
 related:
   - "[[deadworks-runtime]]"
@@ -23,8 +24,9 @@ related:
   - "[[examples-index]]"
   - "[[deadworks-scan-2026-04-22]]"
   - "[[deadworks-scan-2026-04-23]]"
+  - "[[deadworks-0.4.6-release]]"
 created: 2026-04-22
-updated: 2026-04-23
+updated: 2026-04-24
 confidence: high
 ---
 
@@ -57,7 +59,7 @@ All hook methods on `IDeadworksPlugin` have default no-op implementations
 | `HeroData` | static — hero metadata lookup |
 | `KeyValues3` | `new KeyValues3(); kv.SetFloat(k,v); pawn.AddModifier(name, kv)`; `IDisposable` |
 | `ParticleSystem` | `CParticleSystem.Create(path).AtPosition(v).StartActive(true).Spawn()` |
-| `Precache` | `AddResource(path)`, `AddHero(Heroes.X)` — call from `OnPrecacheResources` |
+| `Precache` | `AddResource(path)`, `AddHero(Heroes.X)` — call from `OnPrecacheResources`. **v0.4.6**: the host no longer auto-precaches every `AvailableInGame` hero. Plugins that dynamically swap heroes on players must call `Precache.AddHero` explicitly from `OnPrecacheResources` for each hero they intend to grant. |
 | `Server` | `MapName`, `ExecuteCommand`, `ClientCommand`, `EnumerateConVars`, `EnumerateConCommands`, `AddSearchPath`, `SetAddons`, `AddEngineLogListener` |
 | `Sounds`, `SoundEvent` | `Sounds.Play`, `Sounds.PlayAt` helpers; **`SoundEvent` builder** (fluent `SetFloat/SetUInt32/SetFloat3/…` + `.Emit(RecipientFilter) → GUID`, `SetParams(guid, …)`, `SoundEvent.Stop(guid, …)`, `SoundEvent.StopByName(name, src, …)`). Wire format is SOS-packed-params; field names are MurmurHash2-lowercased. Added upstream `c0f977b` (2026-04-22). |
 | `Utf8` | `Utf8.Encode(string, Span<byte>)`, `Utf8.Size(string)` — stackalloc-friendly UTF-8 |
@@ -148,3 +150,36 @@ See [[deadworks-0.4.5-release]] for the full list. Summary:
 - `CBasePlayerController.PrintToConsole` — **fixed** in v0.4.5; prior
   versions silently no-op'd
 - Single-player targeted sound emission path (`Sounds/`)
+
+## v0.4.6 API additions worth knowing
+
+See [[deadworks-0.4.6-release]] for the full list + commit map. Summary:
+
+- **`Precache.AddHero` no longer auto-called for every hero.** The
+  host's `OnPrecacheResources` auto-loop was removed; plugins that
+  grant arbitrary heroes must precache manually.
+- **`Entities.ByName(name)` / `Entities.ByName<T>(name)` /
+  `Entities.FirstByName(name)` / `Entities.FirstByName<T>(name)`** —
+  find entities by targetname (case-sensitive). Cursor-based native
+  lookup against the engine's targetname index; faster than scanning
+  `Entities.All` with a `.Where(...)`.
+- **`CCitadelAbilityComponent.FindAbilityByName(string)`** — returns
+  `CCitadelBaseAbility?` by internal ability name
+  (e.g. `"citadel_ability_primary_dash"`).
+- **`CCitadelPlayerPawn.RemoveAbility(CCitadelBaseAbility)`** — new
+  overload that takes an ability entity directly (returns `bool`),
+  alongside the existing name/index overloads.
+- **`CCitadelPlayerPawn.GetStamina() / SetStamina(float)`** — one-call
+  stamina read/write. `SetStamina` writes `CurrentValue`, `LatchValue`,
+  and `LatchTime = GlobalVars.CurTime` in one step.
+- **`EntityData<T>` is `IEnumerable<KeyValuePair<CBaseEntity, T>>`** and
+  exposes `Count`. `foreach (var (ent, val) in _data)` now works;
+  do not mutate during iteration. See [[schema-accessors]].
+- **`CBaseEntity` equality is now handle-based.** `==` / `!=` /
+  `Equals` / `GetHashCode` compare the packed `EntityHandle`
+  (serial + index). Wrappers constructed twice for the same native
+  entity are now equal.
+- **`AbilityResource.LatchTime` / `LatchValue` setters now network
+  properly** — prior versions bypassed `NotifyStateChanged` via raw
+  pointer writes; v0.4.6 routes through `SchemaAccessor.Set` with the
+  networked flag set. Coupled with `SetStamina` above.

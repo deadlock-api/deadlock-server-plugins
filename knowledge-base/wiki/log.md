@@ -8,7 +8,75 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
-## [2026-04-23] — 2nd deadworks scan (EntityIO, Trace, SoundEvent, native-DLL, telemetry)
+## [2026-04-24] — ingest Deadworks v0.4.6 release notes
+
+- **Operation:** ingest
+- **Source:** [[deadworks-0.4.6-release]] — user-provided release notes
+  for `v0.4.6` at
+  `https://github.com/Deadworks-net/deadworks/releases`, captured at
+  `raw/articles/deadworks-0.4.6-release.md`. Every bullet verified
+  against upstream commits on tag `v0.4.6` in `../deadworks/`
+  (8 commits since `v0.4.5`: `8dd5b78`, `0dcf287`, `b84d68c`,
+  `ea10f94`, `44c2f8e`, `f1f83e6`, `0f5a5af`, `0b2dd87`).
+- **Pages created:** `sources/deadworks-0.4.6-release.md` — full
+  commit map, impact analysis, cross-cutting implications.
+- **Pages updated:**
+  - `concepts/plugin-api-surface.md` — new "v0.4.6 API additions"
+    section; `Precache` row annotated with the auto-precache removal;
+    added raw article source + `[[deadworks-0.4.6-release]]` related
+    link; `updated: 2026-04-24`.
+  - `entities/schema-accessors.md` — added `IEnumerable` +
+    `Count` note under `EntityData<T>`; new "`CBaseEntity` equality
+    (v0.4.6)" section; new "`Entities` — query helpers (v0.4.6)"
+    section distinguishing `ByClass` / `ByDesignerName` /
+    `ByName`; `AbilityResource` entry added to type reference with
+    the latch-networking fix. Sources + related links + `updated`.
+  - `concepts/deadworks-runtime.md` — new "v0.4.6 (2026-04-24)"
+    section mirroring the release bullets with links to
+    [[schema-accessors]]; sources + related; `updated`.
+  - `index.md` — last-ingest blurb rewritten; prior blurb demoted to
+    "Prev ingest"; new source page listed under Sources; total page
+    count bumped 32 → 33.
+- **Key findings / surprises:**
+  - **Commit `ea10f94`'s subject is misleading.** "Add way to find
+    abilities by targetname" — but the added API is `Entities.ByName`
+    family for **entities** by targetname. Abilities got their
+    `FindAbilityByName` in the prior commit `b84d68c`. Release notes
+    are accurate; the commit subject is not.
+  - **`SetStamina` + `AbilityResource` latch fix are coupled.** Both
+    landed 2026-04-24 and the release notes list them as separate
+    bullets. Without the latch fix (`0f5a5af`), the new `SetStamina`
+    helper (`0b2dd87`) would have written fields that don't network,
+    making the helper semi-useless. They're a logical unit.
+  - **`CBaseEntity` equality is handle-based, not EntityIndex-based.**
+    The commit subject (`f1f83e6`) says "EntityIndex-based equality"
+    but the implementation compares the packed `EntityHandle`
+    (serial + index). Safer semantic — re-used entity slots with a
+    bumped serial compare unequal, as they should.
+  - **Hero auto-precache removal is a soft-regression risk for any
+    plugin that swaps heroes dynamically.** Grepped the repo — no
+    plugin in `deadlock-server-plugins/` currently overrides
+    `OnPrecacheResources`, and the existing gamemodes rely on
+    map-prescribed heroes. Flagged as "watch for this on future
+    hero-roulette modes" in the source summary.
+  - **`EntityData<T>` enumeration yields `new CBaseEntity(handle)`**
+    where `handle` is the stored `uint` key, passed to the
+    `CBaseEntity(nint)` constructor. Works for equality purposes
+    (`EntityHandle` property reads back the stored uint) but the
+    wrapper's internal `Handle` field is *the entity handle uint*,
+    not a native pointer. Plugins that iterate `EntityData` and call
+    methods requiring a real pointer (`.Remove()`, schema accessor
+    `Set`) would hit undefined behavior. This is an implementation
+    caveat of the new API, not documented in the release notes.
+    Consider flagging to upstream if it causes issues in practice.
+- **Repo impact:** **none today.** All four plugins already migrated
+  to `[Command]` (no deprecation cliff in this release); none
+  override `OnPrecacheResources`; none depend on wrapper
+  reference-equality; no stamina manipulation today; none use
+  `AbilityResource` directly. The new APIs are purely additive
+  surface we can adopt when we next write a hero-roulette or
+  targetname-scanning feature.
+- **Contradictions flagged:** none.
 
 - **Operation:** ingest (second scan pass on upstream `../deadworks/`)
 - **Source:** user-requested scan of `../deadworks/` for knowledge not

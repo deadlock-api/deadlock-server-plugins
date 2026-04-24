@@ -3,6 +3,7 @@ title: Entity System & Schema Access
 type: entity
 sources:
   - raw/notes/2026-04-22-deadworks-schema-accessors.md
+  - knowledge-base/raw/articles/deadworks-0.4.6-release.md
   - ../deadworks/managed/DeadworksManaged.Api/Entities/SchemaAccessor.cs
   - ../deadworks/managed/DeadworksManaged.Api/Entities/SchemaArrayAccessor.cs
   - ../deadworks/managed/DeadworksManaged.Api/Entities/SchemaStringAccessor.cs
@@ -10,13 +11,17 @@ sources:
   - ../deadworks/managed/DeadworksManaged.Api/Entities/NativeEntityFactory.cs
   - ../deadworks/managed/DeadworksManaged.Api/Entities/NativeClassAttribute.cs
   - ../deadworks/managed/DeadworksManaged.Api/Entities/EntityData.cs
+  - ../deadworks/managed/DeadworksManaged.Api/Entities/CBaseEntity.cs
+  - ../deadworks/managed/DeadworksManaged.Api/Entities/Entities.cs
+  - ../deadworks/managed/DeadworksManaged.Api/Entities/AbilityResource.cs
 related:
   - "[[plugin-api-surface]]"
   - "[[source-2-engine]]"
   - "[[deadworks-mem-jsonc]]"
   - "[[events-surface]]"
+  - "[[deadworks-0.4.6-release]]"
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-04-24
 confidence: high
 ---
 
@@ -146,6 +151,12 @@ API:
 - `TryGet(entity, out T)`
 - `GetOrAdd(entity, defaultValue)` and `GetOrAdd(entity, Func<T>)`
 - `Has(entity)`, `Remove(entity)`, `Clear()`
+- **(v0.4.6)** `Count` — number of entries currently stored
+- **(v0.4.6)** `IEnumerable<KeyValuePair<CBaseEntity, T>>` — iterate via
+  `foreach (var kvp in _data)`. Each yielded key is `new CBaseEntity(handle)`.
+  **Do not add/remove entries during iteration** (standard dictionary
+  enumeration caveat — doc comment on `GetEnumerator` calls this out
+  explicitly).
 
 **Global auto-cleanup on entity delete.** `EntityDataRegistry.OnEntityDeleted(uint handle)`
 iterates all registered stores (weak references, pruned on iteration)
@@ -185,13 +196,78 @@ if (pawn == null) return HookResult.Continue;
 returns typed wrapper or null. This is the idiomatic path instead of raw
 `(CCitadelPlayerPawn)entity` casts.
 
+## `CBaseEntity` equality (v0.4.6)
+
+`CBaseEntity` implements `IEquatable<CBaseEntity>` with `==` / `!=`
+operators, `Equals(object?)`, and `GetHashCode()` all derived from
+`EntityHandle` (the packed serial + index `uint`). Two wrappers that
+point at the same native entity compare equal regardless of wrapper
+type or wrapper reference identity.
+
+```csharp
+var a = args.Entity;
+var b = Players.FromSlot(0)?.Pawn;
+if (a == b) { /* same native entity */ }
+
+// Safe as dictionary key:
+var state = new Dictionary<CBaseEntity, int>();
+state[a] = 7;
+```
+
+Prior to v0.4.6, equality fell back to reference-equality on the
+managed wrapper — two wrappers for the same entity could compare
+unequal. Collections keyed by `CBaseEntity` worked by accident before
+and work by design now. Commit `f1f83e6`.
+
+> Commit subject says "EntityIndex-based equality" but the
+> implementation compares full `EntityHandle` (serial + index), so
+> wrappers for a re-used entity slot with a bumped serial compare
+> unequal. That's the safer semantic.
+
+## `Entities` — query helpers (v0.4.6)
+
+Static class under `DeadworksManaged.Api` for querying the server's
+entity list. Four enumerator-style methods plus three cursor-based
+targetname lookups:
+
+| Method | Returns |
+|---|---|
+| `Entities.All` | all valid entities (scans 32768-slot entity list) |
+| `Entities.ByClass<T>()` | typed wrappers for every entity matching native class `T` |
+| `Entities.ByDesignerName(name)` | every entity whose designer name equals `name` (ordinal) |
+| **`Entities.FirstByName(name)` (v0.4.6)** | `CBaseEntity?` — first entity with matching targetname |
+| **`Entities.FirstByName<T>(name)` (v0.4.6)** | `T?` — first match whose native class also satisfies `T` |
+| **`Entities.ByName(name)` (v0.4.6)** | `IEnumerable<CBaseEntity>` — all matching targetname |
+| **`Entities.ByName<T>(name)` (v0.4.6)** | `IEnumerable<T>` — all matching targetname + class |
+
+Targetname lookups are **case-sensitive** per the XML doc comments.
+They back onto a cursor-style `NativeInterop.FindEntityByName(cursor,
+name)` callback that walks the engine's internal targetname index —
+faster than `Entities.All.Where(e => e.GetTargetname() == name)` for
+large entity counts. Candidate replacement for any mapper-wired
+targetname scan.
+
+Distinction:
+- `ByClass<T>` matches by **native DLL class** (e.g.
+  `npc_trooper_boss`) — what `CBaseEntity.As<T>()` checks.
+- `ByDesignerName` matches by **designer name** (entity classname
+  string used in `CreateByDesignerName`).
+- `ByName`/`FirstByName` match by **targetname** (the `m_iName`
+  identifier authored in Hammer / the KV block), not the classname.
+
 ## Entity type reference
 
 Files under `Entities/`:
-- `CBaseEntity` — root wrapper
+- `CBaseEntity` — root wrapper; v0.4.6 adds handle-based equality
+  operators and `IEquatable<CBaseEntity>`
 - `CBaseModifier`, `CBodyComponent`, `CGameSceneNode`, `CPointWorldText`
 - `CCitadelModifierVData`, `CModifierVData`, `CEntitySubclassVDataBase`
   — modifier/subclass vdata wrappers
 - `CEntityKeyValues` — kv3-backed entity properties
 - `CallbackHandle` — unified handle impl for callback-style subscriptions
 - `PlayerEntities.cs` — player-specific wrapper class groupings
+- `AbilityResource` — wraps `AbilityResource_t` (stamina / ability
+  resource with latch-based networking). v0.4.6 fix: `LatchTime` /
+  `LatchValue` setters now fire `NotifyStateChanged` (previously did
+  raw pointer writes that bypassed network notification, so
+  client-side latch state drifted after plugin writes).

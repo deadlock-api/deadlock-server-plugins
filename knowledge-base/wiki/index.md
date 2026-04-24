@@ -2,27 +2,37 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-04-23
+updated: 2026-04-24
 ---
 
-_Last ingest: 2026-04-23 — **2nd deadworks scan** — catalogued three
+_Last ingest: 2026-04-24 — **Deadworks v0.4.6 release notes**. New
+source page: [[deadworks-0.4.6-release]] (8 commits since `v0.4.5`,
+each verified). Managed API additions: `Entities.ByName` /
+`FirstByName` family (targetname lookup, case-sensitive, cursor-backed
+native iteration), `CCitadelAbilityComponent.FindAbilityByName`,
+`CCitadelPlayerPawn.RemoveAbility(ability)` overload,
+`CCitadelPlayerPawn.GetStamina`/`SetStamina`, `EntityData<T>` is
+`IEnumerable<KeyValuePair<CBaseEntity, T>>` with `Count`,
+`CBaseEntity` equality now handle-based (packed serial+index, enables
+`Dictionary<CBaseEntity, …>` / `==` correctness). Behavior change:
+host no longer auto-precaches every `AvailableInGame` hero — plugins
+that dynamically swap heroes must call `Precache.AddHero` themselves
+from `OnPrecacheResources`. Fix: `AbilityResource.LatchTime` /
+`LatchValue` setters now fire `NotifyStateChanged` (prior raw-pointer
+writes silently skipped network propagation — couples with the new
+`SetStamina`). No deprecations this release. No plugin in this repo
+affected today — all already migrated off `[ChatCommand]`, none
+override `OnPrecacheResources`. Updated pages: [[plugin-api-surface]],
+[[schema-accessors]], [[deadworks-runtime]]._
+
+_Prev ingest: 2026-04-23 — **2nd deadworks scan** — catalogued three
 plugin-facing API surfaces the 2026-04-22 scan missed plus one fix from
 the 2026-04-14 upstream cluster. New pages: [[entity-io]]
 (`EntityIO.HookOutput`/`HookInput` for mapper-wired entity I/O; no
 auto-cleanup on unload — **always dispose the handle in `OnUnload`**),
 [[trace-api]] (VPhys2 ray / sphere / hull / capsule / mesh casts via
 `Trace.Ray` + `SimpleTrace`; silent no-op when `PhysicsQueryPtr`
-not ready; filter vtable gotcha). Updated pages: [[deadworks-plugin-loader]]
-(native-DLL resolution via `LoadUnmanagedDll` override in
-`PluginLoadContext`, commit `f9a876c` — enables plugins bundling
-native deps like SQLite's `e_sqlite3`); [[deadworks-runtime]]
-(corrected SHA `deb8ff2` → `224d660` for telemetry rework, full env-var
-reference table for `DEADWORKS_TELEMETRY_ENABLED` /
-`DEADWORKS_OTLP_ENDPOINT` / `_PROTOCOL` / `_SERVICE_NAME` / `_LOG_LEVEL`;
-env overrides JSONC); [[plugin-api-surface]] (proper `SoundEvent`
-builder description — beyond `Sounds.Play/PlayAt` there's full
-`SetFloat/SetUInt32/SetFloat3`, GUID-addressable `SetParams`/`Stop`,
-`StopByName`; added upstream `c0f977b` 2026-04-22)._
+not ready; filter vtable gotcha)._
 
 _Prev ingest: 2026-04-23 — **PluginBus catalogued** (new in upstream
 `../deadworks/`): static `DeadworksManaged.Api.PluginBus` for
@@ -139,6 +149,11 @@ what to load — keep it concise and current.
 - [[deadworks-scan-2026-04-23]] — follow-up scan: `LoadUnmanagedDll`
   override, telemetry env-var reference, EntityIO, Trace, `SoundEvent`
   builder (5 raw notes)
+- [[deadworks-0.4.6-release]] — v0.4.6 release notes: hero auto-precache
+  removed, `Entities.ByName`/`FirstByName`, `FindAbilityByName`,
+  `RemoveAbility(ability)`, `Get/SetStamina`, `EntityData` enumerable,
+  `CBaseEntity` handle-based equality, `AbilityResource` latch
+  network-notify fix
 
 ## Comparisons
 
@@ -146,7 +161,9 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 32 (index, log, overview, glossary, 4 source,
+**Total wiki pages:** 33 (index, log, overview, glossary, 5 source,
 5 plugin, 5 concept, 14 entity, 2 operation)
-**Last ingest:** 2026-04-23 — 2nd deadworks scan (entity-io, trace-api,
-plugin-loader LoadUnmanagedDll, telemetry env vars, SoundEvent builder)
+**Last ingest:** 2026-04-24 — Deadworks v0.4.6 release notes
+(Entities.ByName family, ability APIs, Get/SetStamina, EntityData
+IEnumerable, CBaseEntity handle equality, AbilityResource latch fix,
+hero auto-precache removed)

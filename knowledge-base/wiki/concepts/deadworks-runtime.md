@@ -4,6 +4,7 @@ type: concept
 sources:
   - raw/notes/2026-04-23-telemetry-env-vars.md
   - knowledge-base/raw/articles/deadworks-0.4.5-release.md
+  - knowledge-base/raw/articles/deadworks-0.4.6-release.md
   - knowledge-base/raw/notes/2026-04-22-deadworks-command-attribute.md
   - knowledge-base/raw/notes/2026-04-22-deadworks-events-surface.md
   - knowledge-base/raw/notes/2026-04-22-deadworks-plugin-api-surface.md
@@ -49,8 +50,9 @@ related:
   - "[[plugin-config]]"
   - "[[gameevent-source-generator]]"
   - "[[examples-index]]"
+  - "[[deadworks-0.4.6-release]]"
 created: 2026-04-21
-updated: 2026-04-23
+updated: 2026-04-24
 confidence: high
 ---
 
@@ -453,6 +455,50 @@ surface changes:
 
 Default listen port reverted to `27067` in the same release — see the
 port note in the "replacement entry point" section above.
+
+## v0.4.6 (2026-04-24)
+
+Release notes: [[deadworks-0.4.6-release]]. Managed API surface changes:
+
+- **Heroes no longer auto-precached.** `EntryPoint.OnPrecacheResources`
+  used to iterate every `Heroes` enum value and call
+  `Precache.AddHero(hero)` for each `AvailableInGame` entry before
+  dispatching to plugins. That loop was removed (commit `0dcf287`).
+  `Precache.AddHero` is still callable — plugins that dynamically
+  swap heroes must now precache explicitly from their own
+  `OnPrecacheResources`. **Impact:** smaller connecting-player
+  working set; faster hot-join. No plugin in this repo currently
+  overrides `OnPrecacheResources`.
+- **Ability APIs added:**
+  - `CCitadelAbilityComponent.FindAbilityByName(string)` — returns
+    `CCitadelBaseAbility?` by internal ability name.
+  - `CCitadelPlayerPawn.RemoveAbility(CCitadelBaseAbility)` — new
+    overload taking the ability entity directly (returns `bool`).
+- **`Entities.ByName` / `FirstByName` family** — four new static
+  methods for targetname lookup, case-sensitive, cursor-backed native
+  iteration of the engine's targetname index. Faster than scanning
+  `Entities.All` with `.Where(targetname==)`. See
+  [[schema-accessors]].
+- **`CCitadelPlayerPawn.GetStamina() / SetStamina(float)`** — one-call
+  stamina read/write. `SetStamina` writes `CurrentValue`,
+  `LatchValue`, and `LatchTime = GlobalVars.CurTime` together.
+- **`EntityData<T>` is `IEnumerable<KeyValuePair<CBaseEntity, T>>`**
+  with a `Count` property. See [[schema-accessors]].
+- **`CBaseEntity` equality is handle-based.** `==`/`!=`/`Equals`/
+  `GetHashCode` now compare the packed `EntityHandle` (serial +
+  index). Wrappers built twice for the same native entity compare
+  equal. Unlocks `CBaseEntity` as a `Dictionary` / `HashSet` key. See
+  [[schema-accessors]].
+- **`AbilityResource.LatchTime` / `LatchValue` now network.** Prior
+  versions used raw pointer writes that skipped
+  `NotifyStateChanged`; v0.4.6 marks the accessors networked and
+  routes writes through `SchemaAccessor.Set`. Makes the new
+  `SetStamina` helper actually propagate to clients. See
+  [[schema-accessors]].
+
+No deprecations added in this release. The `[ChatCommand]` /
+`[ConCommand]` deprecations from v0.4.5 remain pending removal; all
+plugins in this repo already migrated.
 
 ## Host / fork split
 
