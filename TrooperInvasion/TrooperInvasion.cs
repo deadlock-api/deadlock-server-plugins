@@ -64,7 +64,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private const float HealthScalePerRound = 2f;
     private const float HealthScalePerWave = 0.2f;
     private const float MaxHealthScale = 24f;
-    private readonly HashSet<int> _aliveEnemyTroopers = new();
+    // Keyed by packed CEntityHandle (serial + index), NOT raw index. Tracking
+    // by index leaks: dying-but-not-yet-deleted troopers still pass the
+    // designer/team filter, and index reuse hides recycled slots from the
+    // reconciler. CBaseEntity.FromHandle returns null on serial mismatch, so
+    // a stale handle reliably reports "gone".
+    private readonly HashSet<uint> _aliveEnemyTroopers = new();
     private static bool IsTrooperDesigner(string designer) =>
         designer == "npc_trooper" || designer == "npc_trooper_boss";
 
@@ -182,10 +187,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private void CullAllTroopers()
     {
         // Snapshot the enumeration first — Remove mutates the entity list.
-        var victims = Entities.All.Where(e => IsTrooperDesigner(e.DesignerName)).Select(e => e.EntityIndex).ToArray();
-        foreach (var idx in victims)
+        // Capture EntityHandle so the deferred Remove can't accidentally hit
+        // a recycled slot.
+        var victims = Entities.All.Where(e => IsTrooperDesigner(e.DesignerName)).Select(e => e.EntityHandle).ToArray();
+        foreach (var handle in victims)
         {
-            Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
+            Timer.Once(1.Ticks(), () => CBaseEntity.FromHandle(handle)?.Remove());
         }
         _aliveEnemyTroopers.Clear();
     }
@@ -619,11 +626,11 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // `2026-04-22-onentityspawned-remove-deferral.md`.
         var ent = args.Entity;
         if (!IsTrooperDesigner(ent.DesignerName)) return;
-        int idx = ent.EntityIndex;
+        uint handle = ent.EntityHandle;
 
         if (ent.TeamNum == HumanTeam)
         {
-            Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
+            Timer.Once(1.Ticks(), () => CBaseEntity.FromHandle(handle)?.Remove());
             return;
         }
 
@@ -634,11 +641,11 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         int humans = HumanPlayerCount();
         if (humans == 0)
         {
-            Timer.Once(1.Ticks(), () => CBaseEntity.FromIndex(idx)?.Remove());
+            Timer.Once(1.Ticks(), () => CBaseEntity.FromHandle(handle)?.Remove());
             return;
         }
 
-        _aliveEnemyTroopers.Add(idx);
+        _aliveEnemyTroopers.Add(handle);
         ScaleTrooperHealth(ent);
         if (_aliveEnemyTroopers.Count >= ComputeTrooperCap(humans))
             SetSpawnEnabled(false);
@@ -646,20 +653,29 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
     public override void OnEntityDeleted(EntityDeletedEvent args)
     {
-        _aliveEnemyTroopers.Remove(args.Entity.EntityIndex);
+        _aliveEnemyTroopers.Remove(args.Entity.EntityHandle);
     }
 
     // OnEntityDeleted misses some trooper removal paths (super-trooper promotion,
-    // engine end-of-lane despawn), so the set leaks across waves. Sweep entries
-    // whose entity is gone or no longer an enemy trooper before the cap check.
+    // engine end-of-lane despawn) and dying troopers linger as entities for a
+    // tick or more before deletion, so the set leaks. Sweep entries whose
+    // entity is gone, recycled (FromHandle returns null on serial mismatch),
+    // no longer an enemy trooper, or no longer alive.
     private void ReconcileAliveTroopers()
     {
         if (_aliveEnemyTroopers.Count == 0) return;
-        _aliveEnemyTroopers.RemoveWhere(idx =>
+        int before = _aliveEnemyTroopers.Count;
+        _aliveEnemyTroopers.RemoveWhere(handle =>
         {
-            var ent = CBaseEntity.FromIndex(idx);
-            return ent == null || !IsTrooperDesigner(ent.DesignerName) || ent.TeamNum != EnemyTeam;
+            var ent = CBaseEntity.FromHandle(handle);
+            return ent == null
+                || !IsTrooperDesigner(ent.DesignerName)
+                || ent.TeamNum != EnemyTeam
+                || !ent.IsAlive;
         });
+        int swept = before - _aliveEnemyTroopers.Count;
+        if (swept > 0)
+            Console.WriteLine($"[TI] Reconciler swept {swept} stale trooper handle{(swept == 1 ? "" : "s")} (alive now {_aliveEnemyTroopers.Count})");
     }
 
     [GameEventHandler("gameover_msg")]
