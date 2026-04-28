@@ -16,6 +16,19 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
 
     private const string PatronDesigner = "npc_barrack_boss";
 
+    // npc_boss_tier3 = Base Guardian / Shrine, npc_boss_tier2 = Walker. When
+    // either dies the engine fires a scripted "weaken Patron" damage event on
+    // the same-team Patron whose magnitude exceeds Patron HP. Tracked per
+    // team so OnTakeDamage can distinguish that scripted hit from a real
+    // killing blow — the Attacker on the scripted event is propagated from
+    // whoever killed the guardian (player OR trooper), so attacker-identity
+    // alone can't tell them apart.
+    private static bool IsGuardianDesigner(string designer) =>
+        designer == "npc_boss_tier3" || designer == "npc_boss_tier2";
+    private const double GuardianWeakenWindowSeconds = 2.0;
+    private DateTime? _humanPatronWeakenAt;
+    private DateTime? _enemyPatronWeakenAt;
+
     // Without this pin, the engine sits in PreGameWait and never spawns
     // npc_boss_tier1 / tier2 (Guardians / Walkers). Patron death is intercepted
     // in OnTakeDamage, so a single write at startup is enough.
@@ -138,6 +151,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _starterGoldSeeded.Clear();
         _voteSkipSlots.Clear();
         _roundStatsBySlot.Clear();
+        _humanPatronWeakenAt = null;
+        _enemyPatronWeakenAt = null;
         ResetSessionStats();
 
         // One-shot pin. Deferred because GameRules isn't guaranteed networked
@@ -633,6 +648,27 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
             return HookResult.Continue;
         }
 
+        // Engine-scripted "weaken Patron" event triggered by a Base Guardian /
+        // Walker death on the same team. Magnitude exceeds Patron HP and the
+        // Attacker is propagated from whatever killed the guardian — when a
+        // trooper is the killer, attacker-identity matches a real lethal hit
+        // (IsTrooperDesigner = true) and would falsely fire EndMode. The only
+        // reliable signal is the time-window from the guardian's
+        // entity_killed event, gated on damage magnitude so legitimate small
+        // hits during the window still pass through.
+        DateTime? weakenAt = args.Entity.TeamNum == HumanTeam
+            ? _humanPatronWeakenAt
+            : _enemyPatronWeakenAt;
+        if (weakenAt.HasValue
+            && (DateTime.UtcNow - weakenAt.Value).TotalSeconds < GuardianWeakenWindowSeconds
+            && args.Info.Damage > args.Entity.MaxHealth * 0.5f)
+        {
+            args.Info.Damage = 0f;
+            args.Entity.Health = args.Entity.MaxHealth;
+            Console.WriteLine($"[TI] Absorbed scripted weaken-Patron event (team {args.Entity.TeamNum}) — Patron pinned at full HP.");
+            return HookResult.Continue;
+        }
+
         if (args.Entity.Health - args.Info.Damage > 0f) return HookResult.Continue;
 
         // Always swallow the lethal damage so the Patron never reaches 0 HP at
@@ -660,6 +696,14 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         if (_modeOver) return HookResult.Continue;
         var killed = CBaseEntity.FromIndex(args.EntindexKilled);
         if (killed == null) return HookResult.Continue;
+
+        // Open the weaken-Patron absorb window for the same-team Patron — see
+        // the OnTakeDamage comment for why this is the only reliable signal.
+        if (IsGuardianDesigner(killed.DesignerName))
+        {
+            if (killed.TeamNum == HumanTeam) _humanPatronWeakenAt = DateTime.UtcNow;
+            else if (killed.TeamNum == EnemyTeam) _enemyPatronWeakenAt = DateTime.UtcNow;
+        }
 
         // Patron "deaths" are intercepted in OnTakeDamage before landing, so
         // npc_barrack_boss never reaches entity_killed.
