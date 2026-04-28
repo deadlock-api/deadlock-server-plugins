@@ -650,15 +650,20 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     }
 
     // OnEntityDeleted misses some trooper removal paths (super-trooper promotion,
-    // engine end-of-lane despawn), so the set leaks across waves. Sweep entries
-    // whose entity is gone or no longer an enemy trooper before the cap check.
+    // engine end-of-lane despawn), and dying troopers linger as live entities
+    // for a tick or more before deletion, so the set leaks across waves. Sweep
+    // entries whose entity is gone, no longer an enemy trooper, or no longer
+    // alive before the cap check.
     private void ReconcileAliveTroopers()
     {
         if (_aliveEnemyTroopers.Count == 0) return;
         _aliveEnemyTroopers.RemoveWhere(idx =>
         {
             var ent = CBaseEntity.FromIndex(idx);
-            return ent == null || !IsTrooperDesigner(ent.DesignerName) || ent.TeamNum != EnemyTeam;
+            return ent == null
+                || !IsTrooperDesigner(ent.DesignerName)
+                || ent.TeamNum != EnemyTeam
+                || !ent.IsAlive;
         });
     }
 
