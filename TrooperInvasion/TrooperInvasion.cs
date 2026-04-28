@@ -414,35 +414,74 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private void BeginPostModeCooldown(string outcome)
     {
         // Clean up wave scheduler state (spawn off, cull troopers, cancel timers,
-        // _waveNum=0). _modeOver stays true through the cooldown so new joiners'
-        // ArmWaves calls no-op until we explicitly unlatch it below.
+        // _waveNum=0). _modeOver stays true through the cooldown so stray patron
+        // hits during the changelevel countdown can't re-enter EndMode.
         DisarmWaves($"mode over: {outcome}");
 
-        SetWaveTimer(PostModeCooldownSeconds, () =>
+        // Plugin-side managed reset (timers, gold, HP-pin Patron, etc.) cannot
+        // restore engine-side world state — dead Base Guardians / Walkers /
+        // Guardians don't respawn, the Patron stays HP-pinned at whatever
+        // OnTakeDamage left it, and citadel_match_end / mp_restartgame /
+        // citadel_street_brawl_reset do not apply in dl_midtown standard mode
+        // (see knowledge-base/raw/notes/2026-04-28-trooper-invasion-postmode-reset-options.md).
+        // changelevel <current map> is the only reliable engine-level reset.
+        // Pattern lifted from AutoRestartPlugin.cs:105-110: count down with
+        // chat warnings, then `changelevel <Server.MapName>`. OnStartupServer
+        // re-runs after the level reload and restores all plugin state from
+        // scratch — no manual field-by-field reset needed here.
+        var notifications = new List<(int SecondsRemaining, string Message)>();
+        for (int i = (int)PostModeCooldownSeconds; i >= 1; i--)
         {
-            // Full session reset mirroring the last-player-disconnect path, minus
-            // _playerJoinTimes (remaining humans' session durations keep counting
-            // from their original join — their connection never dropped).
-            _modeOver = false;
-            _roundNum = 1;
-            _waveNum = 0;
-            _starterGoldSeeded.Clear();
-            _peakPlayers = 0;
-            _playerCountSampleSum = 0;
-            _playerCountSampleCount = 0;
-            _deathsThisWave = 0;
-            _deathsPrevWave = 0;
+            if (i == (int)PostModeCooldownSeconds || i == 20 || i == 10 || i <= 5)
+                notifications.Add((i, $"[TI] Map restart in {i} second{(i == 1 ? "" : "s")}"));
+        }
+        notifications.Sort((a, b) => b.SecondsRemaining.CompareTo(a.SecondsRemaining));
 
-            if (HumanPlayerCount() > 0)
+        var totalSeconds = (int)PostModeCooldownSeconds;
+        var notifIndex = 0;
+        var elapsedSeconds = 0;
+
+        _pendingWaveTimer?.Cancel();
+        _pendingWaveTimer = Timer.Sequence(step =>
+        {
+            if (notifIndex < notifications.Count)
             {
-                Console.WriteLine("[TI] Post-mode cooldown ended — rearming round 1.");
-                ArmWaves();
+                var (secondsRemaining, message) = notifications[notifIndex];
+                var targetElapsed = totalSeconds - secondsRemaining;
+
+                if (elapsedSeconds >= targetElapsed)
+                {
+                    Chat.PrintToChatAll(message);
+                    Console.WriteLine($"[TI] {message}");
+                    notifIndex++;
+
+                    if (notifIndex < notifications.Count)
+                    {
+                        var nextSecondsRemaining = notifications[notifIndex].SecondsRemaining;
+                        var waitSeconds = secondsRemaining - nextSecondsRemaining;
+                        elapsedSeconds += waitSeconds;
+                        return step.Wait(waitSeconds.Seconds());
+                    }
+
+                    DoChangeLevel(outcome);
+                    return step.Done();
+                }
+
+                var waitUntilNext = targetElapsed - elapsedSeconds;
+                elapsedSeconds = targetElapsed;
+                return step.Wait(waitUntilNext.Seconds());
             }
-            else
-            {
-                Console.WriteLine("[TI] Post-mode cooldown ended on empty server — staying dormant until a player joins.");
-            }
-        });
+
+            DoChangeLevel(outcome);
+            return step.Done();
+        }).CancelOnMapChange();
+    }
+
+    private static void DoChangeLevel(string outcome)
+    {
+        var map = Server.MapName;
+        Console.WriteLine($"[TI] Post-mode reset ({outcome}) — changelevel {map}");
+        Server.ExecuteCommand($"changelevel {map}");
     }
 
     private static void AnnounceHud(string title, string description)
