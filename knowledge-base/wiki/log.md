@@ -8,6 +8,82 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-05-02] — ingest Deadworks v0.4.7 release notes + TrooperInvasion git history
+
+- **Operation:** ingest (release notes + git history catch-up)
+- **Sources:**
+  - `raw/articles/deadworks-0.4.7-release.md` — v0.4.7 release notes, manually
+    captured from upstream `../deadworks/` git log between tags `v0.4.6` and `v0.4.7`
+    (12 commits: `2ef15c5..300f0fa`, 2026-04-25 → 2026-05-01). Every commit diff
+    verified.
+  - `raw/notes/2026-04-28-trooper-invasion-friendly-guardian-false-defeat.md` — captured
+    during fix session; describes the scripted-weaken false-defeat bug.
+  - `raw/notes/2026-05-02-trooper-invasion-world-reset-changelevel.md` — written this
+    session; documents the changelevel-based post-mode reset.
+  - `raw/notes/2026-05-02-trooper-invasion-dead-trooper-reconciler.md` — written this
+    session; documents the dying-trooper reconciler fix and the reverted EntityHandle
+    approach.
+  - Server-plugins git history: commits `faa2b33`, `196b442`, `5f4d527`, `b7ea812`,
+    `c2813ae`, `c359ee5` (2026-04-24 → 2026-04-28).
+- **Pages created (2):**
+  - `sources/deadworks-0.4.7-release.md` — full commit map, impact analysis,
+    key findings including `OnPawnHeroInitialized` fire-on-every-path gotcha,
+    `OnceHeroInitialized` handle vs EntityHandle note, `IsValidObserverTarget`
+    team-3 exclusion implication for TrooperInvasion.
+  - `entities/observer-api.md` — full reference for the v0.4.7 observer/spectator
+    surface: `CPlayer_ObserverServices`, `ObserverMode_t` enum, `CBasePlayerPawn`
+    pass-throughs, `CCitadelPlayerController.MakeObserver()`, native signatures,
+    current usage (none) and candidate uses.
+- **Pages updated (6):**
+  - `concepts/plugin-api-surface.md` — new "v0.4.7 API additions" section;
+    `Enums/` row updated to mention `ObserverMode_t`; new source + related links;
+    `updated: 2026-05-02`.
+  - `entities/events-surface.md` — updated preamble to note 24 hooks (was 23);
+    new "Hero init (v0.4.7)" section with `OnPawnHeroInitialized` entry and
+    fires-on-every-path warning. `updated: 2026-05-02`.
+  - `concepts/deadworks-runtime.md` — new "v0.4.7" section mirroring release
+    bullets; `related:` + source added; `updated: 2026-05-02`.
+  - `plugins/trooper-invasion.md` — three new sections:
+    "False-defeat suppression — guardian scripted-weaken gate" (commit `196b442`),
+    "Post-mode world reset — changelevel" (commit `5f4d527`),
+    "Alive-trooper tracking and reconciler" (commit `c359ee5`);
+    win/lose-conditions bullet updated to cross-reference; stale "missing"
+    NetMessages bullet corrected; new sources; `updated: 2026-05-02`.
+  - `index.md` — last-ingest blurb rewritten; prior blurb demoted; new pages
+    added to Sources and Entities sections; page total bumped 33 → 35.
+  - `log.md` — this entry.
+- **Key findings / surprises:**
+  - **`OnPawnHeroInitialized` fires on initial spawn too.** The hook name implies
+    "when the player swaps heroes" but it fires whenever
+    `CCitadelPlayerPawn::InitializeHeroOnPawn` runs — including the initial hero
+    assignment on `OnClientFullConnect`. Plugins using this hook for post-swap setup
+    must guard against running setup code twice if they also handle `OnClientFullConnect`.
+    The one-shot `OnceHeroInitialized` avoids this problem by design.
+  - **`IsValidObserverTarget` hardcodes team 3 as invalid.** TrooperInvasion's enemy
+    troopers are team 3; the managed helper would reject them as observer targets.
+    Plugins can bypass the helper and call `SetObserverTarget` directly.
+  - **The revert pair `c2813ae` / `b7ea812` deleted a raw note.** Commit `c2813ae`
+    added `raw/notes/2026-04-28-trooper-invasion-alive-set-leak.md`; the revert commit
+    `b7ea812` deleted it. This violates the "never edit raw/ after writing" policy
+    (the note was deleted, not just superseded). The raw note no longer exists on disk.
+    The replacement `2026-05-02-trooper-invasion-dead-trooper-reconciler.md` covers the
+    same territory with the definitive approach. No correction needed in raw/ (it's
+    already gone); flagged here for the record.
+  - **Changelevel is the only reliable full-engine reset on `dl_midtown`.** Confirmed
+    that `citadel_match_end`, `mp_restartgame`, and `citadel_street_brawl_reset` do not
+    apply. This is a generalizable finding: any mode on `dl_midtown` that needs a clean
+    engine-side round reset must use `changelevel`.
+  - **`faa2b33` (docs: advertise !feedback) not ingested into wiki.** The commit adds
+    `!feedback` to help text in both Deathmatch and TrooperInvasion. This is a
+    user-visible documentation change, not a code/API finding — no wiki page needed.
+- **Repo impact:** No plugin changes required for v0.4.7 (no breaking changes).
+  TrooperInvasion wiki pages now accurate to the post-2026-04-28 state.
+- **Contradictions flagged:**
+  - `plugins/trooper-invasion.md` "What's intentionally missing" had a stale bullet
+    "No NetMessages.Send HUD announcements" — the HUD announcements feature was
+    implemented in a prior session and the "missing" section wasn't updated.
+    **Corrected** this session.
+
 ## [2026-04-24] — ingest Deadworks v0.4.6 release notes
 
 - **Operation:** ingest

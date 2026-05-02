@@ -51,8 +51,10 @@ related:
   - "[[gameevent-source-generator]]"
   - "[[examples-index]]"
   - "[[deadworks-0.4.6-release]]"
+  - "[[deadworks-0.4.7-release]]"
+  - "[[observer-api]]"
 created: 2026-04-21
-updated: 2026-04-24
+updated: 2026-05-02
 confidence: high
 ---
 
@@ -499,6 +501,31 @@ Release notes: [[deadworks-0.4.6-release]]. Managed API surface changes:
 No deprecations added in this release. The `[ChatCommand]` /
 `[ConCommand]` deprecations from v0.4.5 remain pending removal; all
 plugins in this repo already migrated.
+
+## v0.4.7 (2026-05-01)
+
+Release notes: [[deadworks-0.4.7-release]]. 12 commits between `v0.4.6` and `v0.4.7`.
+No breaking changes or deprecations.
+
+- **`CBaseEntity.SetScale(float scale)`** — vtable at offset 246. Any entity. `1.0` = default.
+- **`CBaseEntity.ModelName`** — read-only string property returning the current model path.
+  New signature `"CBaseModelEntity::GetModelName"` in `deadworks_mem.jsonc`.
+- **`IDeadworksPlugin.OnPawnHeroInitialized(CCitadelPlayerPawn)`** — **24th plugin hook.**
+  Fires after `CCitadelPlayerPawn::InitializeHeroOnPawn` returns: initial pawn creation,
+  `SelectHero`, `ResetHero`, and `resethero`. New sig `"CCitadelPlayerPawn::InitializeHeroOnPawn"`.
+  See [[events-surface]].
+- **`CCitadelPlayerPawn.SwapOrReset(Heroes, Action?)`** and **`OnceHeroInitialized(Action)`** —
+  hero-swap helpers; `onReady` callback fires once abilities are populated.
+- **`CBasePlayerController.Pawn`** — `m_hPawn` schema accessor returning `CBasePlayerPawn?`.
+- **Observer/Spectator API** — full new surface: `CPlayer_ObserverServices`, `ObserverMode_t`
+  enum, `CBasePlayerPawn.ObserverServices/Mode/Target/SetXxx`, and
+  `CCitadelPlayerController.MakeObserver()` (remove hero pawn, spawn observer pawn, attach).
+  See [[observer-api]].
+- **Bugfixes:** ServerBrowser skips bots in player count; A2S patch signature now required
+  (startup crash if missing rather than silent skip); `RemoveAbility` log noise removed.
+- **Hook list correction:** `PluginLoader.cs` partial-class list now includes
+  `PluginLoader.EntityIO.cs` — this file was always present but accidentally omitted from the
+  partial-class layout table above.
 
 ## Host / fork split
 

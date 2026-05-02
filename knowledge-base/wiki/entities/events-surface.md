@@ -8,6 +8,7 @@ sources:
   - ../deadworks/managed/DeadworksManaged.Api/Events/
   - ../deadworks/managed/DeadworksManaged.Api/Enums/HookResult.cs
   - ../deadworks/managed/PluginLoader.Events.cs
+  - raw/articles/deadworks-0.4.7-release.md
 related:
   - "[[plugin-api-surface]]"
   - "[[gameevent-source-generator]]"
@@ -15,7 +16,7 @@ related:
   - "[[schema-accessors]]"
   - "[[examples-index]]"
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-05-02
 confidence: high
 ---
 
@@ -23,6 +24,8 @@ confidence: high
 
 The full list of override points on `IDeadworksPlugin`. All methods have
 default no-op implementations — override only what you use.
+
+**v0.4.7:** 24 hooks (was 23 in v0.4.6). New: `OnPawnHeroInitialized`.
 
 ## Lifecycle / frame
 
@@ -70,6 +73,15 @@ default no-op implementations — override only what you use.
 - `OnProcessUsercmds(ProcessUsercmdsEvent)` — raw usercmds
 - `OnCheckTransmit(CheckTransmitEvent)` — per-player PVS list editing. See
   "CheckTransmitEvent" below.
+
+## Hero init (v0.4.7)
+
+- `OnPawnHeroInitialized(CCitadelPlayerPawn pawn)` — fires after
+  `CCitadelPlayerPawn::InitializeHeroOnPawn` returns server-side: initial
+  pawn spawn, `SelectHero` (async swap), `ResetHero` (sync reset), and
+  the `resethero` command. **Fires for every hero init path** — guard
+  against double-setup if you also handle `OnClientFullConnect`.
+  See [[deadworks-0.4.7-release]].
 
 ## Config
 

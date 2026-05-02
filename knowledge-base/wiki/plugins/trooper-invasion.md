@@ -13,6 +13,9 @@ sources:
   - knowledge-base/raw/notes/2026-04-22-hud-game-announcement.md
   - knowledge-base/raw/notes/2026-04-22-host-api-version-skew.md
   - knowledge-base/raw/notes/2026-04-23-boss-wave-native-crash.md
+  - knowledge-base/raw/notes/2026-04-28-trooper-invasion-friendly-guardian-false-defeat.md
+  - knowledge-base/raw/notes/2026-05-02-trooper-invasion-world-reset-changelevel.md
+  - knowledge-base/raw/notes/2026-05-02-trooper-invasion-dead-trooper-reconciler.md
   - ../TrooperInvasion/TrooperInvasion.cs
   - ../TrooperInvasion/TrooperInvasion.csproj
 related:
@@ -25,7 +28,7 @@ related:
   - "[[deathmatch]]"
   - "[[examples-index]]"
 created: 2026-04-22
-updated: 2026-04-23
+updated: 2026-05-02
 confidence: high
 ---
 
@@ -205,12 +208,86 @@ lifted from `TagPlugin.cs:342-346`.
 - **Win/lose conditions** — `entity_killed` listens for `npc_barrack_boss`
   (patron) deaths. Team-2 patron destroyed → defeat; team-3 patron
   destroyed → victory; either way `_modeOver = true`, scheduler stops.
+  See "False-defeat suppression" below for the guardian-scripted-hit guard.
 - **Flex slots** force-unlocked at startup (schema-write pattern, same as
   [[deathmatch]]).
 - **Fast respawn** — `citadel_player_spawn_time_max_respawn_time = 3`.
 - **Allow duplicate heroes** — `citadel_allow_duplicate_heroes = 1` (no
   Amber-side hero lock).
 - **Allow purchasing anywhere** — `citadel_allow_purchasing_anywhere = 1`.
+
+## False-defeat suppression — guardian scripted-weaken gate
+
+When a `npc_boss_tier2` or `npc_boss_tier3` (Base Guardian) dies, the engine fires a
+**scripted large-damage event on the same team's Patron** (`npc_barrack_boss`) to weaken
+it. The attacker on that scripted event is propagated from **whatever killed the guardian**
+— i.e. a trooper that kills the friendly tier3 propagates itself as attacker with
+`IsTrooperDesigner = true`.
+
+**The bug (fixed 2026-04-28, commit `196b442`):** the `OnTakeDamage` path's `realKill`
+check — intended to only allow troopers to end the game by killing the enemy Patron
+directly — also fired for this scripted weaken hit, calling
+`EndMode(victory: false)` with the Patron still at full health.
+
+**Fix:** track `_humanPatronWeakenAt` / `_enemyPatronWeakenAt` timestamps (set in
+`OnEntityKilled` via `IsGuardianDesigner`) and gate in `OnTakeDamage`:
+- If `Damage > entity.MaxHealth * 0.5f` AND the timestamp is within ~2s → absorb the hit
+  and restore `Health = MaxHealth`.
+- The `MaxHealth * 0.5f` magnitude threshold lets small chip damage during the window
+  pass through normally, so coincident real attacks aren't frozen.
+- Order of events: `entity_killed` for the guardian fires **before** the scripted
+  `OnTakeDamage` on the Patron, so the timestamp is reliably set when the gate runs.
+- Restoring to `MaxHealth` (not `1`) is critical: pinning to 1 would make every subsequent
+  damage event trigger the lethal-absorb branch for ~2s, re-introducing the false defeat
+  with a delay.
+
+See `raw/notes/2026-04-28-trooper-invasion-friendly-guardian-false-defeat.md`.
+
+## Post-mode world reset — changelevel
+
+After Defeat or Victory, `BeginPostModeCooldown` runs a 30s countdown (chat warnings at
+T-30, T-10, T-5) then issues
+`Server.ExecuteCommand("changelevel " + Server.MapName)`.
+
+**Why changelevel, not field reset:** the old `BeginPostModeCooldown` cleared only
+plugin-side bookkeeping. Engine-side state persisted into the next round: Patron HP was
+left at the absorb-pinned value, dead Base Guardians / Walkers remained destroyed, and the
+trooper spawn machinery reflected end-of-round convar state. `citadel_match_end`,
+`mp_restartgame`, and `citadel_street_brawl_reset` don't apply on `dl_midtown` standard
+mode (no-op or crash). Changelevel is the only reliable full-engine reset.
+
+**OnStartupServer is the single re-init path** — all per-round state is wiped naturally
+by the level reload; no explicit field clearing needed in `BeginPostModeCooldown`.
+
+**`CancelOnMapChange()` safety:** the countdown timer has `.CancelOnMapChange()`, so if
+the server operator issues a manual `changelevel` before the 30s countdown fires, the
+pending timer is silently cancelled.
+
+See `raw/notes/2026-05-02-trooper-invasion-world-reset-changelevel.md`,
+commit `5f4d527`.
+
+## Alive-trooper tracking and reconciler
+
+`_aliveEnemyTroopers` is a `HashSet<int>` keyed by EntityIndex. Entries are added in
+`OnEntitySpawned` (enemy trooper) and removed in `OnEntityDeleted`.
+
+**Dead-trooper lingering bug (fixed 2026-04-28, commit `c359ee5`):** dying troopers
+remain as live entities for a tick or more before `OnEntityDeleted` fires. The reconciler
+(which runs at the start of each `RunWave`) was counting these corpses as alive, keeping
+`_aliveEnemyTroopers` above the cap and causing waves to be skipped forever with "too many
+troopers alive".
+
+**Fix:** the reconciler calls `CBaseEntity.FromIndex(idx)?.IsAlive ?? false` for each set
+member; any entry that resolves to dead (entity deleted or dying) is removed. The
+`IsAlive` check catches both "entity deleted before `OnEntityDeleted` fired" and the
+"entity exists but is in a dying animation" state.
+
+**Prior approach (tried and reverted):** commit `c2813ae` switched to `HashSet<uint>`
+keyed by `EntityHandle` (packed serial+index) so stale handles auto-report "gone" via
+`CBaseEntity.FromHandle` serial mismatch. Reverted by `b7ea812` in favour of the simpler
+EntityIndex + IsAlive-check approach.
+
+See `raw/notes/2026-05-02-trooper-invasion-dead-trooper-reconciler.md`.
 
 ## Chat / console commands
 
@@ -323,7 +400,8 @@ manual spawn.
   locations are correct.
 - No cooldown scaling — vanilla cooldowns are fine in PvE.
 - No rank-based team balancing — one team, nothing to balance.
-- No `NetMessages.Send` HUD announcements — csproj does **not** reference
-  `Google.Protobuf`. Add per [[plugin-build-pipeline]] if announcements
-  become desired.
+- No `Google.Protobuf` PackageReference in the csproj — `CCitadelUserMsg_HudGameAnnouncement`
+  is used for HUD toasts but its proto type resolves transitively via `DeadworksManaged.Api`,
+  so no explicit package reference is needed. Add one per [[plugin-build-pipeline]] only if
+  a new message type requires it.
 - No `HeroItemSets.jsonc` per-hero loadouts.

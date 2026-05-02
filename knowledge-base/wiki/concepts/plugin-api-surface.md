@@ -8,6 +8,7 @@ sources:
   - raw/notes/2026-04-23-trace-api.md
   - raw/notes/2026-04-23-soundevent-builder.md
   - knowledge-base/raw/articles/deadworks-0.4.6-release.md
+  - knowledge-base/raw/articles/deadworks-0.4.7-release.md
   - ../deadworks/managed/DeadworksManaged.Api/
 related:
   - "[[deadworks-runtime]]"
@@ -25,8 +26,10 @@ related:
   - "[[deadworks-scan-2026-04-22]]"
   - "[[deadworks-scan-2026-04-23]]"
   - "[[deadworks-0.4.6-release]]"
+  - "[[deadworks-0.4.7-release]]"
+  - "[[observer-api]]"
 created: 2026-04-22
-updated: 2026-04-24
+updated: 2026-05-02
 confidence: high
 ---
 
@@ -75,7 +78,7 @@ All hook methods on `IDeadworksPlugin` have default no-op implementations
 | `ConCommands/` | `[ConCommand]`, `[ConVar]` — deprecated; migrate to `[Command]` |
 | `Config/` | [[plugin-config]] — `[PluginConfig]`, `IConfig.Validate`, hot-reload |
 | `Entities/` | [[schema-accessors]] — entity wrappers, schema access, `Players`, `EntityData<T>` |
-| `Enums/` | game constants (see enum reference below) |
+| `Enums/` | game constants (see enum reference below) — v0.4.7 adds **`ObserverMode_t`** |
 | `Events/` | [[events-surface]] — event payload types + game-event typed classes; also [[entity-io]] (`EntityIO.HookOutput/HookInput` for mapper-wired entity I/O) |
 | `NetMessages/` | [[netmessages-api]] — protobuf message send/hook |
 | `Timer/` | [[timer-api]] — per-plugin timer service |
@@ -150,6 +153,28 @@ See [[deadworks-0.4.5-release]] for the full list. Summary:
 - `CBasePlayerController.PrintToConsole` — **fixed** in v0.4.5; prior
   versions silently no-op'd
 - Single-player targeted sound emission path (`Sounds/`)
+
+## v0.4.7 API additions worth knowing
+
+See [[deadworks-0.4.7-release]] for the full list + commit map. Summary:
+
+- **`CBaseEntity.SetScale(float scale)`** — vtable call (offset 246); `1.0` = default.
+  Works on any entity.
+- **`CBaseEntity.ModelName`** — read-only property; returns the current model path
+  (e.g. `"models/heroes_wip/werewolf/werewolf.vmdl"`) or `""`.
+- **`IDeadworksPlugin.OnPawnHeroInitialized(CCitadelPlayerPawn)`** — new 24th hook
+  (was 23 in v0.4.6). Fires after hero abilities/modifiers are populated server-side.
+  Trigger paths: initial spawn, `SelectHero`, `ResetHero`, `resethero` command.
+  See [[events-surface]].
+- **`CCitadelPlayerPawn.SwapOrReset(Heroes, Action?)`** — high-level helper: calls
+  `SelectHero` or `ResetHero` depending on current hero; `onReady` callback fires once
+  abilities are ready (via `OnceHeroInitialized`).
+- **`CCitadelPlayerPawn.OnceHeroInitialized(Action)`** — one-shot continuation, runs
+  the next time `InitializeHeroOnPawn` fires for this pawn. Auto-cleaned on entity delete.
+- **`CBasePlayerController.Pawn`** — new `m_hPawn` schema accessor (`CBasePlayerPawn?`).
+- **Observer/Spectator API** — `CPlayer_ObserverServices`, `ObserverMode_t` enum,
+  `CBasePlayerPawn.ObserverServices/Mode/Target/SetXxx`,
+  `CCitadelPlayerController.MakeObserver()`. See [[observer-api]].
 
 ## v0.4.6 API additions worth knowing
 

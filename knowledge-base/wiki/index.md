@@ -2,10 +2,21 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-04-24
+updated: 2026-05-02
 ---
 
-_Last ingest: 2026-04-24 — **Deadworks v0.4.6 release notes**. New
+_Last ingest: 2026-05-02 — **Deadworks v0.4.7 release notes + TrooperInvasion fixes**.
+New source page: [[deadworks-0.4.7-release]] (12 commits since `v0.4.6`). New entity
+page: [[observer-api]] (full spectator system). Managed API additions: `CBaseEntity.SetScale`,
+`CBaseEntity.ModelName`, 24th hook `OnPawnHeroInitialized`, `SwapOrReset`/`OnceHeroInitialized`
+hero-swap helpers, `CBasePlayerController.Pawn`, `CPlayer_ObserverServices`,
+`ObserverMode_t` enum, `CBasePlayerPawn` observer pass-throughs, `CCitadelPlayerController.MakeObserver`.
+Bugfixes: ServerBrowser bot count, A2S patch sig now required, RemoveAbility log noise.
+TrooperInvasion wiki updated with three bug fixes from git history (commits 196b442, 5f4d527, c359ee5):
+false-defeat from guardian scripted-weaken event, changelevel-based post-mode world reset,
+dead-trooper reconciler fix._
+
+_Prev ingest: 2026-04-24 — **Deadworks v0.4.6 release notes**. New
 source page: [[deadworks-0.4.6-release]] (8 commits since `v0.4.5`,
 each verified). Managed API additions: `Entities.ByName` /
 `FirstByName` family (targetname lookup, case-sensitive, cursor-backed
@@ -129,6 +140,8 @@ what to load — keep it concise and current.
   JSONC auto-creation, class-name keyed paths
 - [[gameevent-source-generator]] — `.gameevents` → typed `*Event` classes;
   type mapping table; file ordering invariant
+- [[observer-api]] — v0.4.7 observer/spectator system: `CPlayer_ObserverServices`,
+  `ObserverMode_t`, `CBasePlayerPawn` observer pass-throughs, `CCitadelPlayerController.MakeObserver`
 
 ## Operations
 
@@ -154,6 +167,9 @@ what to load — keep it concise and current.
   `RemoveAbility(ability)`, `Get/SetStamina`, `EntityData` enumerable,
   `CBaseEntity` handle-based equality, `AbilityResource` latch
   network-notify fix
+- [[deadworks-0.4.7-release]] — v0.4.7 release notes: `SetScale`, `ModelName`,
+  `OnPawnHeroInitialized` (24th hook), `SwapOrReset`/`OnceHeroInitialized`,
+  `CBasePlayerController.Pawn`, full observer/spectator API
 
 ## Comparisons
 
@@ -161,9 +177,8 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 33 (index, log, overview, glossary, 5 source,
-5 plugin, 5 concept, 14 entity, 2 operation)
-**Last ingest:** 2026-04-24 — Deadworks v0.4.6 release notes
-(Entities.ByName family, ability APIs, Get/SetStamina, EntityData
-IEnumerable, CBaseEntity handle equality, AbilityResource latch fix,
-hero auto-precache removed)
+**Total wiki pages:** 35 (index, log, overview, glossary, 6 source,
+5 plugin, 5 concept, 15 entity, 2 operation)
+**Last ingest:** 2026-05-02 — Deadworks v0.4.7 release notes + TrooperInvasion fixes
+(SetScale, ModelName, OnPawnHeroInitialized, SwapOrReset, observer API;
+false-defeat guard, changelevel reset, dead-trooper reconciler)
