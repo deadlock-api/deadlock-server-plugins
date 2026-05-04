@@ -152,6 +152,30 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _humanPatronWeakenAt = null;
         _enemyPatronWeakenAt = null;
         ResetSessionStats();
+
+        // Diagnostic: dump every npc_boss_* / info_npc_spawn* on the map, with team
+        // and position. Run at +0s, +5s, +30s, +60s post-startup to see whether
+        // tier1 ever appears and at what time. Remove once the spawn flow is
+        // understood.
+        DumpBossEntities("+0s");
+        Timer.Once(5.Seconds(), () => DumpBossEntities("+5s"));
+        Timer.Once(30.Seconds(), () => DumpBossEntities("+30s"));
+        Timer.Once(60.Seconds(), () => DumpBossEntities("+60s"));
+    }
+
+    private static void DumpBossEntities(string label)
+    {
+        int n = 0;
+        foreach (var ent in Entities.All)
+        {
+            var d = ent.DesignerName;
+            if (d.StartsWith("npc_boss_") || d.StartsWith("info_npc_spawn") || d == "npc_barrack_boss")
+            {
+                Console.WriteLine($"[TI-DUMP {label}] {d} team={ent.TeamNum} pos={ent.Position}");
+                n++;
+            }
+        }
+        Console.WriteLine($"[TI-DUMP {label}] total={n}");
     }
 
     private void CullAllTroopers()
