@@ -121,6 +121,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // crashes natively (see 2026-04-22-trooper-convar-runtime-mutation.md).
         // max_per_lane 2048 correlated with AVs under the OnEntitySpawned Remove() storm.
         ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0);
+        // tier1 (Guardian towers) is engine-spawned and gated on game_mode/match_mode.
+        // Default deadworks server runs with mode=Invalid, so the engine skips tier1
+        // initial spawn even though the map has the spawn anchors. Vanilla
+        // matchmaking sets these to Normal/Unranked.
+        Server.ExecuteCommand("game_mode 1");   // k_ECitadelGameMode_Normal
+        Server.ExecuteCommand("match_mode 1");  // k_ECitadelMatchMode_Unranked
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3);
         ConVar.Find("citadel_allow_duplicate_heroes")?.SetInt(1);
@@ -148,6 +154,17 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _humanPatronWeakenAt = null;
         _enemyPatronWeakenAt = null;
         ResetSessionStats();
+
+        // Diagnostic: log mode + tier1 count after the engine has stabilised.
+        // Remove once tier1 spawn flow is confirmed.
+        Timer.Once(5.Seconds(), () => LogModeAndTier1("+5s"));
+        Timer.Once(30.Seconds(), () => LogModeAndTier1("+30s"));
+    }
+
+    private static void LogModeAndTier1(string label)
+    {
+        int tier1 = Entities.All.Count(e => e.DesignerName == "npc_boss_tier1");
+        Console.WriteLine($"[TI-DIAG {label}] gameMode={GameRules.GameMode} matchMode={GameRules.MatchMode} gameState={GameRules.GameState} tier1Count={tier1}");
     }
 
     private void CullAllTroopers()
