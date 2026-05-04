@@ -122,11 +122,14 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // max_per_lane 2048 correlated with AVs under the OnEntitySpawned Remove() storm.
         ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0);
         // tier1 (Guardian towers) is engine-spawned and gated on game_mode/match_mode.
-        // Default deadworks server runs with mode=Invalid, so the engine skips tier1
-        // initial spawn even though the map has the spawn anchors. Vanilla
-        // matchmaking sets these to Normal/Unranked.
+        // Default deadworks server runs with mode=Invalid; convar set didn't take
+        // effect (likely FCVAR_CHEAT or engine-internal). Try sv_cheats-bracketed
+        // convars + direct schema writes once GameRules networks.
+        Server.ExecuteCommand("sv_cheats 1");
         Server.ExecuteCommand("game_mode 1");   // k_ECitadelGameMode_Normal
         Server.ExecuteCommand("match_mode 1");  // k_ECitadelMatchMode_Unranked
+        Server.ExecuteCommand("sv_cheats 0");
+        TryWriteModesAsap(attemptsLeft: 50);
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3);
         ConVar.Find("citadel_allow_duplicate_heroes")?.SetInt(1);
@@ -165,6 +168,23 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     {
         int tier1 = Entities.All.Count(e => e.DesignerName == "npc_boss_tier1");
         Console.WriteLine($"[TI-DIAG {label}] gameMode={GameRules.GameMode} matchMode={GameRules.MatchMode} gameState={GameRules.GameState} tier1Count={tier1}");
+    }
+
+    private static readonly SchemaAccessor<uint> _eMatchModeWrite = new("CCitadelGameRules"u8, "m_eMatchMode"u8);
+    private static readonly SchemaAccessor<uint> _eGameModeWrite = new("CCitadelGameRules"u8, "m_eGameMode"u8);
+
+    private void TryWriteModesAsap(int attemptsLeft)
+    {
+        if (attemptsLeft <= 0) return;
+        if (GameRules.IsValid)
+        {
+            var ptr = GameRules.Pointer;
+            _eGameModeWrite.Set(ptr, 1);   // Normal
+            _eMatchModeWrite.Set(ptr, 1);  // Unranked
+            Console.WriteLine($"[TI] Schema-wrote gameMode=Normal matchMode=Unranked (was {GameRules.GameMode}/{GameRules.MatchMode}).");
+            return;
+        }
+        Timer.Once(50.Milliseconds(), () => TryWriteModesAsap(attemptsLeft - 1));
     }
 
     private void CullAllTroopers()
