@@ -121,15 +121,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // crashes natively (see 2026-04-22-trooper-convar-runtime-mutation.md).
         // max_per_lane 2048 correlated with AVs under the OnEntitySpawned Remove() storm.
         ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0);
-        // tier1 (Guardian towers) is engine-spawned and gated on game_mode/match_mode.
-        // Default deadworks server runs with mode=Invalid; convar set didn't take
-        // effect (likely FCVAR_CHEAT or engine-internal). Try sv_cheats-bracketed
-        // convars + direct schema writes once GameRules networks.
-        Server.ExecuteCommand("sv_cheats 1");
-        Server.ExecuteCommand("game_mode 1");   // k_ECitadelGameMode_Normal
-        Server.ExecuteCommand("match_mode 1");  // k_ECitadelMatchMode_Unranked
-        Server.ExecuteCommand("sv_cheats 0");
-        TryWriteModesAsap(attemptsLeft: 50);
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3);
         ConVar.Find("citadel_allow_duplicate_heroes")?.SetInt(1);
@@ -157,54 +148,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _humanPatronWeakenAt = null;
         _enemyPatronWeakenAt = null;
         ResetSessionStats();
-
-        // Diagnostic: log mode + tier1 count after the engine has stabilised.
-        // Remove once tier1 spawn flow is confirmed.
-        Timer.Once(5.Seconds(), () => LogModeAndTier1("+5s"));
-        Timer.Once(30.Seconds(), () => LogModeAndTier1("+30s"));
-    }
-
-    private static void LogModeAndTier1(string label)
-    {
-        int tier1 = Entities.All.Count(e => e.DesignerName == "npc_boss_tier1");
-        Console.WriteLine($"[TI-DIAG {label}] gameMode={GameRules.GameMode} matchMode={GameRules.MatchMode} gameState={GameRules.GameState} tier1Count={tier1}");
-
-        // Wide scan: anything that mentions tier1 / guardian / alt / spawn anchor.
-        // Tally + first 8 examples per bucket.
-        var tier1Like = new List<string>();
-        var altLike = new List<string>();
-        var spawnInfo = new List<string>();
-        var towerLike = new List<string>();
-        foreach (var ent in Entities.All)
-        {
-            var d = ent.DesignerName;
-            if (d.Contains("tier1", StringComparison.OrdinalIgnoreCase)) tier1Like.Add(d);
-            if (d.StartsWith("alt_", StringComparison.OrdinalIgnoreCase)) altLike.Add(d);
-            if (d.StartsWith("info_") && d.Contains("spawn", StringComparison.OrdinalIgnoreCase)) spawnInfo.Add(d);
-            if (d.Contains("guardian", StringComparison.OrdinalIgnoreCase) || d.Contains("tower", StringComparison.OrdinalIgnoreCase)) towerLike.Add(d);
-        }
-        Console.WriteLine($"[TI-DIAG {label}] tier1Like={tier1Like.Count} altLike={altLike.Count} spawnInfo={spawnInfo.Count} towerLike={towerLike.Count}");
-        foreach (var d in tier1Like.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   tier1Like: {d}");
-        foreach (var d in altLike.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   altLike: {d}");
-        foreach (var d in spawnInfo.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   spawnInfo: {d}");
-        foreach (var d in towerLike.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   towerLike: {d}");
-    }
-
-    private static readonly SchemaAccessor<uint> _eMatchModeWrite = new("CCitadelGameRules"u8, "m_eMatchMode"u8);
-    private static readonly SchemaAccessor<uint> _eGameModeWrite = new("CCitadelGameRules"u8, "m_eGameMode"u8);
-
-    private void TryWriteModesAsap(int attemptsLeft)
-    {
-        if (attemptsLeft <= 0) return;
-        if (GameRules.IsValid)
-        {
-            var ptr = GameRules.Pointer;
-            _eGameModeWrite.Set(ptr, 1);   // Normal
-            _eMatchModeWrite.Set(ptr, 1);  // Unranked
-            Console.WriteLine($"[TI] Schema-wrote gameMode=Normal matchMode=Unranked (was {GameRules.GameMode}/{GameRules.MatchMode}).");
-            return;
-        }
-        Timer.Once(50.Milliseconds(), () => TryWriteModesAsap(attemptsLeft - 1));
     }
 
     private void CullAllTroopers()
