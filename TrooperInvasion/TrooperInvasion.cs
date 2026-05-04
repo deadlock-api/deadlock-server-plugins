@@ -155,28 +155,37 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _enemyPatronWeakenAt = null;
         ResetSessionStats();
 
-        // One-shot pin. Deferred because GameRules isn't guaranteed networked
-        // at OnStartupServer. No drift watcher: gameover_msg/round_end are
-        // HookResult.Stop'd and Patron death is pre-empted in OnTakeDamage.
-        PinGameInProgress(attemptsLeft: 10);
+        // Cold boot: engine walks WaitingForPlayersToJoin → … → GameInProgress
+        // within ~100ms of first client connect, racing past a single 1s
+        // deferred pin. Burst of 100ms attempts lets one land while GameRules
+        // is networked but state hasn't settled. OnClientConnect re-pins as
+        // a belt-and-braces guard.
+        TryPinGameInProgress(attemptsLeft: 50);
     }
 
-    private void PinGameInProgress(int attemptsLeft)
+    public override bool OnClientConnect(ClientConnectEvent args)
+    {
+        // Engine starts walking the state ladder immediately after the first
+        // client connects; this is the earliest managed hook to catch it.
+        TryPinGameInProgress(attemptsLeft: 1);
+        return true;
+    }
+
+    private void TryPinGameInProgress(int attemptsLeft)
     {
         if (attemptsLeft <= 0) return;
-        Timer.Once(1000.Milliseconds(), () =>
+        if (GameRules.IsValid)
         {
-            if (!GameRules.IsValid)
-            {
-                PinGameInProgress(attemptsLeft - 1);
-                return;
-            }
             var ptr = GameRules.Pointer;
             var current = (EGameState)_eGameState.Get(ptr);
             if (current != EGameState.GameInProgress)
+            {
                 _eGameState.Set(ptr, (uint)EGameState.GameInProgress);
-            Console.WriteLine($"[TI] Pinned m_eGameState -> GameInProgress (was {current}).");
-        });
+                Console.WriteLine($"[TI] Pinned m_eGameState -> GameInProgress (was {current}).");
+            }
+            return;
+        }
+        Timer.Once(100.Milliseconds(), () => TryPinGameInProgress(attemptsLeft - 1));
     }
 
     private void CullAllTroopers()
