@@ -121,6 +121,10 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // crashes natively (see 2026-04-22-trooper-convar-runtime-mutation.md).
         // max_per_lane 2048 correlated with AVs under the OnEntitySpawned Remove() storm.
         ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0);
+        // tier1 (Guardians) is engine-spawned at match start and gated on this convar;
+        // tier2 (Walkers) and tier3 (Base Guardians) are map-placed and present regardless.
+        // Without this, only Walkers + Base spawn — see scaffold note 2026-04-22.
+        ConVar.Find("citadel_npc_spawn_enabled")?.SetInt(1);
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3);
         ConVar.Find("citadel_allow_duplicate_heroes")?.SetInt(1);
