@@ -41,7 +41,7 @@
        compile against it but don't ship our own copy. Needed for NetMessages.Send<T>
        where T : IMessage<T>. -->
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.29.3">
+    <PackageReference Include="Google.Protobuf" Version="3.34.1">
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
