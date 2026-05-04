@@ -168,6 +168,26 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     {
         int tier1 = Entities.All.Count(e => e.DesignerName == "npc_boss_tier1");
         Console.WriteLine($"[TI-DIAG {label}] gameMode={GameRules.GameMode} matchMode={GameRules.MatchMode} gameState={GameRules.GameState} tier1Count={tier1}");
+
+        // Wide scan: anything that mentions tier1 / guardian / alt / spawn anchor.
+        // Tally + first 8 examples per bucket.
+        var tier1Like = new List<string>();
+        var altLike = new List<string>();
+        var spawnInfo = new List<string>();
+        var towerLike = new List<string>();
+        foreach (var ent in Entities.All)
+        {
+            var d = ent.DesignerName;
+            if (d.Contains("tier1", StringComparison.OrdinalIgnoreCase)) tier1Like.Add(d);
+            if (d.StartsWith("alt_", StringComparison.OrdinalIgnoreCase)) altLike.Add(d);
+            if (d.StartsWith("info_") && d.Contains("spawn", StringComparison.OrdinalIgnoreCase)) spawnInfo.Add(d);
+            if (d.Contains("guardian", StringComparison.OrdinalIgnoreCase) || d.Contains("tower", StringComparison.OrdinalIgnoreCase)) towerLike.Add(d);
+        }
+        Console.WriteLine($"[TI-DIAG {label}] tier1Like={tier1Like.Count} altLike={altLike.Count} spawnInfo={spawnInfo.Count} towerLike={towerLike.Count}");
+        foreach (var d in tier1Like.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   tier1Like: {d}");
+        foreach (var d in altLike.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   altLike: {d}");
+        foreach (var d in spawnInfo.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   spawnInfo: {d}");
+        foreach (var d in towerLike.Distinct().Take(8)) Console.WriteLine($"[TI-DIAG {label}]   towerLike: {d}");
     }
 
     private static readonly SchemaAccessor<uint> _eMatchModeWrite = new("CCitadelGameRules"u8, "m_eMatchMode"u8);
