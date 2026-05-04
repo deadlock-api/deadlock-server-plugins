@@ -121,10 +121,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         // crashes natively (see 2026-04-22-trooper-convar-runtime-mutation.md).
         // max_per_lane 2048 correlated with AVs under the OnEntitySpawned Remove() storm.
         ConVar.Find("citadel_trooper_spawn_enabled")?.SetInt(0);
-        // tier1 (Guardians) is engine-spawned at match start and gated on this convar;
-        // tier2 (Walkers) and tier3 (Base Guardians) are map-placed and present regardless.
-        // Without this, only Walkers + Base spawn — see scaffold note 2026-04-22.
-        ConVar.Find("citadel_npc_spawn_enabled")?.SetInt(1);
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt(3);
         ConVar.Find("citadel_allow_duplicate_heroes")?.SetInt(1);
@@ -152,30 +148,6 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
         _humanPatronWeakenAt = null;
         _enemyPatronWeakenAt = null;
         ResetSessionStats();
-
-        // Diagnostic: dump every npc_boss_* / info_npc_spawn* on the map, with team
-        // and position. Run at +0s, +5s, +30s, +60s post-startup to see whether
-        // tier1 ever appears and at what time. Remove once the spawn flow is
-        // understood.
-        DumpBossEntities("+0s");
-        Timer.Once(5.Seconds(), () => DumpBossEntities("+5s"));
-        Timer.Once(30.Seconds(), () => DumpBossEntities("+30s"));
-        Timer.Once(60.Seconds(), () => DumpBossEntities("+60s"));
-    }
-
-    private static void DumpBossEntities(string label)
-    {
-        int n = 0;
-        foreach (var ent in Entities.All)
-        {
-            var d = ent.DesignerName;
-            if (d.StartsWith("npc_boss_") || d.StartsWith("info_npc_spawn") || d == "npc_barrack_boss")
-            {
-                Console.WriteLine($"[TI-DUMP {label}] {d} team={ent.TeamNum} pos={ent.Position}");
-                n++;
-            }
-        }
-        Console.WriteLine($"[TI-DUMP {label}] total={n}");
     }
 
     private void CullAllTroopers()
