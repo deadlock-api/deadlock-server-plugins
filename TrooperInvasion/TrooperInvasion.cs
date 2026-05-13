@@ -58,6 +58,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private const float HealthScalePerRound = 2f;
     private const float HealthScalePerWave = 0.2f;
     private const float MaxHealthScale = 24f;
+
+    // Respawn delay grows with wave/round: W1R1=3s, W10R1≈9s, W1R2=6s, W10R2≈12s, cap=15s.
+    private const float BaseRespawnSeconds = 3f;
+    private const float RespawnScalePerWave = 0.7f;
+    private const float RespawnScalePerRound = 3f;
+    private const float MaxRespawnSeconds = 15f;
     private readonly HashSet<int> _aliveEnemyTroopers = new();
     private static bool IsTrooperDesigner(string designer) =>
         designer == "npc_trooper" || designer == "npc_trooper_boss";
@@ -486,6 +492,12 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
     private float ComputeHealthScale() =>
         Math.Min(MaxHealthScale, 1f + (_roundNum - 1) * HealthScalePerRound + _waveNum * HealthScalePerWave);
 
+    private float ComputeRespawnDelay() =>
+        Math.Min(MaxRespawnSeconds,
+                 BaseRespawnSeconds
+                 + (_roundNum - 1) * RespawnScalePerRound
+                 + (_waveNum - 1) * RespawnScalePerWave);
+
     private void ScaleTrooperHealth(CBaseEntity ent)
     {
         // m_iHealth doesn't auto-clamp to the new max, so we set both.
@@ -755,6 +767,8 @@ public class TrooperInvasionPlugin : DeadworksPluginBase
                     });
                 }
             }
+            if (pawn != null && _wavesActive)
+                pawn.RespawnTime = GlobalVars.CurTime + ComputeRespawnDelay();
         }
 
         return HookResult.Continue;
