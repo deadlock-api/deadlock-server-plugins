@@ -8,6 +8,50 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-05-13] — ingest Deadworks v0.4.8 release notes
+
+- **Operation:** ingest (release notes + git history)
+- **Sources:**
+  - `raw/notes/2026-05-13-deadworks-0.4.8-release.md` — v0.4.8 release notes,
+    derived from `git log v0.4.7..v0.4.8 --oneline` on `Deadworks-net/deadworks`.
+    5 commits (`1c3554a`, `67ac6e9`, `11cff37`, `93a3dd2`, `36d481a`);
+    every commit diff verified.
+- **Pages created (1):**
+  - `sources/deadworks-0.4.8-release.md` — full commit map, impact analysis,
+    key findings including `CCollisionProperty` identity-rotation caveat and
+    `IsReservedSlot` sig-not-required gotcha.
+- **Pages updated (4):**
+  - `concepts/deadworks-runtime.md` — new "v0.4.8" section (Friction, RespawnTime,
+    Collision/CCollisionProperty/BoundingBox, IsReservedSlot native hook);
+    new source + related link; `updated: 2026-05-13`.
+  - `concepts/plugin-api-surface.md` — new "v0.4.8 API additions" section;
+    new source + related link; `updated: 2026-05-13`.
+  - `entities/schema-accessors.md` — new "CCollisionProperty" section with
+    full member table and rotation gotcha; entity type reference row updated;
+    new source + related link; `updated: 2026-05-13`.
+  - `index.md` — last-ingest blurb rewritten; prior blurb demoted; new source
+    page added to Sources section; page total bumped 35 → 36.
+  - `log.md` — this entry.
+- **Key findings / surprises:**
+  - **`CCollisionProperty.WorldMins/WorldMaxs` assume identity rotation.** The
+    source code comment is explicit. For rotated entities the world-space AABB
+    computed by `WorldMins = Mins + Owner.Position` is geometrically wrong.
+    Deadlock has plenty of angled geometry, so any plugin using `Contains` on
+    map entities should verify the entity is axis-aligned or accept approximate
+    results.
+  - **`IsReservedSlot` sig is NOT in the required-sig crash list.** The startup
+    `ValidateSignatures` pass in deadworks crashes the server if a required
+    sig is missing, but `CServerSideClientBase::IsReservedSlot` was added as
+    an optional entry. If the sig goes stale after an engine update, the hook
+    silently doesn't install and slot reservation resumes — no observable crash
+    at startup. Server operators would see the "full server" symptom return
+    without any error log.
+  - **`11cff37` (launcher: Linux path detection) not ingested.** Launcher-only
+    change; no plugin or server-runtime impact.
+- **Repo impact:** No plugin changes required for v0.4.8 (no breaking changes).
+  All new APIs are additive; no plugin currently uses Collision, Friction, or RespawnTime.
+- **Contradictions flagged:** none.
+
 ## [2026-05-02] — ingest Deadworks v0.4.7 release notes + TrooperInvasion git history
 
 - **Operation:** ingest (release notes + git history catch-up)

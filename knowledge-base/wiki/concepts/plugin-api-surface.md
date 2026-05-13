@@ -27,9 +27,10 @@ related:
   - "[[deadworks-scan-2026-04-23]]"
   - "[[deadworks-0.4.6-release]]"
   - "[[deadworks-0.4.7-release]]"
+  - "[[deadworks-0.4.8-release]]"
   - "[[observer-api]]"
 created: 2026-04-22
-updated: 2026-05-02
+updated: 2026-05-13
 confidence: high
 ---
 
@@ -153,6 +154,25 @@ See [[deadworks-0.4.5-release]] for the full list. Summary:
 - `CBasePlayerController.PrintToConsole` — **fixed** in v0.4.5; prior
   versions silently no-op'd
 - Single-player targeted sound emission path (`Sounds/`)
+
+## v0.4.8 API additions worth knowing
+
+See [[deadworks-0.4.8-release]] for the full commit map. Summary:
+
+- **`CBaseEntity.Friction`** — read/write `float` (`m_flFriction`). Works on any entity.
+- **`CCitadelPlayerPawn.RespawnTime`** — read/write `float` (`m_flRespawnTime`). Lets plugins
+  control how long a player stays dead before auto-respawning.
+- **`CBaseEntity.Collision`** — new `CCollisionProperty?` property. Returns `null` when
+  `m_pCollision == 0` (entity has no collision). **Always null-check.**
+- **`CCollisionProperty`** — new class in `Entities/CCollisionProperty.cs`:
+  `Mins`/`Maxs` (local-space OBB, read/write), `BoundingRadius`, `WorldMins`/`WorldMaxs`
+  (world-space convenience — **identity-rotation only**), `Contains(Vector3)` AABB test.
+  See [[schema-accessors]].
+- **`BoundingBox`** — new static utility in `Math/BoundingBox.cs`:
+  `BoundingBox.Contains(mins, maxs, point)` inclusive per-axis check.
+- **Native fix** (no managed API): `CServerSideClientBase::IsReservedSlot` always returns
+  `false` — slot reservation disabled globally. Players blocked from joining "full" servers
+  due to held reserved slots are now allowed in.
 
 ## v0.4.7 API additions worth knowing
 

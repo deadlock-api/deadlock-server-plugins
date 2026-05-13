@@ -2,10 +2,20 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-05-02
+updated: 2026-05-13
 ---
 
-_Last ingest: 2026-05-02 — **Deadworks v0.4.7 release notes + TrooperInvasion fixes**.
+_Last ingest: 2026-05-13 — **Deadworks v0.4.8 release notes**.
+New source page: [[deadworks-0.4.8-release]] (5 commits since `v0.4.7`). New entity
+APIs: `CBaseEntity.Friction` (read/write float), `CCitadelPlayerPawn.RespawnTime`
+(read/write float), `CBaseEntity.Collision` → `CCollisionProperty` (OBB mins/maxs,
+bounding radius, world-space AABB with identity-rotation caveat, `Contains`),
+`BoundingBox` static utility. Native fix: `CServerSideClientBase::IsReservedSlot`
+hook always returns `false` (slot reservation disabled globally; fixes "full server"
+false-positive rejections). No managed API surface for the native fix; sig not in
+required list (silent miss). No breaking changes; no plugin in this repo affected._
+
+_Prev ingest: 2026-05-02 — **Deadworks v0.4.7 release notes + TrooperInvasion fixes**.
 New source page: [[deadworks-0.4.7-release]] (12 commits since `v0.4.6`). New entity
 page: [[observer-api]] (full spectator system). Managed API additions: `CBaseEntity.SetScale`,
 `CBaseEntity.ModelName`, 24th hook `OnPawnHeroInitialized`, `SwapOrReset`/`OnceHeroInitialized`
@@ -170,6 +180,8 @@ what to load — keep it concise and current.
 - [[deadworks-0.4.7-release]] — v0.4.7 release notes: `SetScale`, `ModelName`,
   `OnPawnHeroInitialized` (24th hook), `SwapOrReset`/`OnceHeroInitialized`,
   `CBasePlayerController.Pawn`, full observer/spectator API
+- [[deadworks-0.4.8-release]] — v0.4.8 release notes: `Friction`, `RespawnTime`,
+  `CCollisionProperty`, `BoundingBox`; native `IsReservedSlot` hook (slot-full fix)
 
 ## Comparisons
 
@@ -177,8 +189,7 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 35 (index, log, overview, glossary, 6 source,
+**Total wiki pages:** 36 (index, log, overview, glossary, 7 source,
 5 plugin, 5 concept, 15 entity, 2 operation)
-**Last ingest:** 2026-05-02 — Deadworks v0.4.7 release notes + TrooperInvasion fixes
-(SetScale, ModelName, OnPawnHeroInitialized, SwapOrReset, observer API;
-false-defeat guard, changelevel reset, dead-trooper reconciler)
+**Last ingest:** 2026-05-13 — Deadworks v0.4.8 release notes
+(Friction, RespawnTime, CCollisionProperty, BoundingBox; IsReservedSlot native fix)

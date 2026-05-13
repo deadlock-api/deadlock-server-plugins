@@ -20,8 +20,9 @@ related:
   - "[[deadworks-mem-jsonc]]"
   - "[[events-surface]]"
   - "[[deadworks-0.4.6-release]]"
+  - "[[deadworks-0.4.8-release]]"
 created: 2026-04-22
-updated: 2026-04-24
+updated: 2026-05-13
 confidence: high
 ---
 
@@ -255,11 +256,41 @@ Distinction:
 - `ByName`/`FirstByName` match by **targetname** (the `m_iName`
   identifier authored in Hammer / the KV block), not the classname.
 
+## `CCollisionProperty` — entity bounding box (v0.4.8)
+
+Exposed via `CBaseEntity.Collision` (v0.4.8). Returns `null` when the entity has no
+collision representation (`m_pCollision == 0`). **Always null-check.**
+
+```csharp
+var col = entity.Collision;
+if (col != null && col.Contains(somePoint)) { /* point is inside entity AABB */ }
+```
+
+| Member | Type | Notes |
+|--------|------|-------|
+| `Owner` | `CBaseEntity` | Owning entity |
+| `Mins` | `Vector3` | Local-space OBB lower corner — read/write (`m_vecMins`) |
+| `Maxs` | `Vector3` | Local-space OBB upper corner — read/write (`m_vecMaxs`) |
+| `BoundingRadius` | `float` | Schema `m_flBoundingRadius` — read-only |
+| `WorldMins` | `Vector3` | `Mins + Owner.Position` — **identity rotation only** |
+| `WorldMaxs` | `Vector3` | `Maxs + Owner.Position` — **identity rotation only** |
+| `Contains(Vector3)` | `bool` | Inclusive world-space AABB test |
+| `IsValid` | `bool` | `Handle != 0 && Owner.IsValid` |
+
+**Rotation gotcha:** `WorldMins`/`WorldMaxs` add `Owner.Position` directly to the
+local OBB corners. For entities with non-identity rotation (doors, angled geometry,
+ragdolls) the result is wrong. Correct world-space OBB transforms require multiplying
+by the entity's rotation matrix — not available via this API. Use `Contains` only
+for axis-aligned entities or where approximate AABB testing is acceptable.
+
+Helper utility `BoundingBox.Contains(mins, maxs, point)` is callable directly for
+custom bounding-box checks with arbitrary mins/maxs.
+
 ## Entity type reference
 
 Files under `Entities/`:
-- `CBaseEntity` — root wrapper; v0.4.6 adds handle-based equality
-  operators and `IEquatable<CBaseEntity>`
+- `CBaseEntity` — root wrapper; v0.4.6 handle-based equality; v0.4.8 adds `Friction` + `Collision`
+- `CCollisionProperty` — v0.4.8 OBB wrapper; see section above
 - `CBaseModifier`, `CBodyComponent`, `CGameSceneNode`, `CPointWorldText`
 - `CCitadelModifierVData`, `CModifierVData`, `CEntitySubclassVDataBase`
   — modifier/subclass vdata wrappers

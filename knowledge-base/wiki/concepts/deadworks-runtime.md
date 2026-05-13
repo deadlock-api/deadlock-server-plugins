@@ -52,9 +52,10 @@ related:
   - "[[examples-index]]"
   - "[[deadworks-0.4.6-release]]"
   - "[[deadworks-0.4.7-release]]"
+  - "[[deadworks-0.4.8-release]]"
   - "[[observer-api]]"
 created: 2026-04-21
-updated: 2026-05-02
+updated: 2026-05-13
 confidence: high
 ---
 
@@ -501,6 +502,23 @@ Release notes: [[deadworks-0.4.6-release]]. Managed API surface changes:
 No deprecations added in this release. The `[ChatCommand]` /
 `[ConCommand]` deprecations from v0.4.5 remain pending removal; all
 plugins in this repo already migrated.
+
+## v0.4.8 (2026-05-09)
+
+Release notes: [[deadworks-0.4.8-release]]. 5 commits between `v0.4.7` and `v0.4.8`.
+No breaking changes or deprecations.
+
+- **`CBaseEntity.Friction`** — read/write `float` schema property (`m_flFriction`).
+- **`CCitadelPlayerPawn.RespawnTime`** — read/write `float` schema property (`m_flRespawnTime`).
+- **`CBaseEntity.Collision`** — new `CCollisionProperty?` property. See [[schema-accessors]].
+- **`CCollisionProperty`** — new class exposing OBB `Mins`/`Maxs`, `BoundingRadius`,
+  world-space AABB helpers, and `Contains(Vector3)`. See [[schema-accessors]].
+- **`BoundingBox` static utility** — `BoundingBox.Contains(mins, maxs, point)` inclusive check.
+- **Native: `CServerSideClientBase::IsReservedSlot` hook** — new safetyhook trampoline that
+  unconditionally returns `false`, forcibly disabling slot reservation. New sig added to
+  `deadworks_mem.jsonc` (engine2.dll). Fixes players being blocked from joining servers
+  that appeared "full" due to slot reservation holding vacant slots. No managed API; not
+  in the required-sig crash list (silent no-install if sig goes stale).
 
 ## v0.4.7 (2026-05-01)
 
