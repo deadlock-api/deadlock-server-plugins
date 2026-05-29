@@ -8,6 +8,33 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-05-29] — ingest DisconnectCleanup managed-API refactor
+
+- **Operation:** ingest (repo source + commit)
+- **Source:** `../DisconnectCleanup/DisconnectCleanup.cs` at commit `1f7ae19`
+  ("refactor(disconnect-cleanup): remove player via managed API, drop sv_cheats").
+  Cross-checked against `../deadworks` (`ClientDisconnectedEvent.cs`,
+  `CCitadelPlayerController.cs`, `CBaseEntity.cs`, `TagPlugin.cs`).
+- **Pages created (2):**
+  - `sources/disconnect-cleanup-managed-refactor.md` — before/after diff, rationale,
+    full API verification, team-roster gap.
+  - `plugins/disconnect-cleanup.md` — first page for this plugin; behaviour, history,
+    relationship to Deathmatch/TrooperInvasion/LockTimer.
+- **Pages updated (1):**
+  - `concepts/deadlock-game.md` — "Player disconnect cleanup" section rewritten:
+    `citadel_kick_disconnected_players` now marked **tried-and-abandoned**, no longer
+    the recommended path; added related links; `updated: 2026-05-29`.
+  - (plus `index.md` header/catalog/counts and this log.)
+- **Key findings:** managed removal drops the `sv_cheats` toggle and is scoped to the
+  single disconnecting client, vs. the concommand's server-wide sweep. The
+  `controller.GetHeroPawn()?.Remove();` idiom matches upstream `TagPlugin.cs:137`.
+- **Contradiction resolved:** this **reverses** the 2026-04-23 recommendation that the
+  cheat-flagged concommand replace the manual pawn/controller removal. Wiki now reflects
+  the repo's actual choice.
+- **Gap flagged:** concommand help text claims it also removes players "from any teams";
+  the managed pawn+controller `Remove()` does not explicitly do roster cleanup. Whether
+  team-roster state lingers after managed removal is **untested**.
+
 ## [2026-05-13] — ingest Deadworks v0.4.8 release notes
 
 - **Operation:** ingest (release notes + git history)

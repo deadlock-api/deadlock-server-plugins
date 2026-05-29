@@ -2,10 +2,18 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-05-13
+updated: 2026-05-29
 ---
 
-_Last ingest: 2026-05-13 — **Deadworks v0.4.8 release notes**.
+_Last ingest: 2026-05-29 — **DisconnectCleanup managed-API refactor** (commit `1f7ae19`).
+New plugin page [[disconnect-cleanup]] + source [[disconnect-cleanup-managed-refactor]].
+`OnClientDisconnect` moved off the `sv_cheats`-bracketed `citadel_kick_disconnected_players`
+concommand to a direct `controller.GetHeroPawn()?.Remove(); controller.Remove();`. This
+**reverses** the 2026-04-23 recommendation in [[deadlock-game]] (concommand now marked
+tried-and-abandoned). Open gap: concommand's "removing them from any teams" roster effect
+not replicated by managed removal; untested._
+
+_Prev ingest: 2026-05-13 — **Deadworks v0.4.8 release notes**.
 New source page: [[deadworks-0.4.8-release]] (5 commits since `v0.4.7`). New entity
 APIs: `CBaseEntity.Friction` (read/write float), `CCitadelPlayerPawn.RespawnTime`
 (read/write float), `CBaseEntity.Collision` → `CCollisionProperty` (OBB mins/maxs,
@@ -94,6 +102,7 @@ what to load — keep it concise and current.
 ## Plugins
 
 - [[deathmatch]] — team-vs-team deathmatch gamemode on `dl_midtown`
+- [[disconnect-cleanup]] — removes a disconnecting player's pawn+controller in `OnClientDisconnect`
 - [[lock-timer]] — zone-based lock-timer gamemode with YAML zone config
 - [[status-poker]] — periodic status/keepalive poker plugin
 - [[trooper-invasion]] — PvE co-op gamemode, all humans on team 2 vs engine NPCs
@@ -182,6 +191,8 @@ what to load — keep it concise and current.
   `CBasePlayerController.Pawn`, full observer/spectator API
 - [[deadworks-0.4.8-release]] — v0.4.8 release notes: `Friction`, `RespawnTime`,
   `CCollisionProperty`, `BoundingBox`; native `IsReservedSlot` hook (slot-full fix)
+- [[disconnect-cleanup-managed-refactor]] — commit `1f7ae19`: DisconnectCleanup moved
+  off `sv_cheats`+`citadel_kick_disconnected_players` to managed pawn+controller `Remove()`
 
 ## Comparisons
 
@@ -189,7 +200,8 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 36 (index, log, overview, glossary, 7 source,
-5 plugin, 5 concept, 15 entity, 2 operation)
-**Last ingest:** 2026-05-13 — Deadworks v0.4.8 release notes
-(Friction, RespawnTime, CCollisionProperty, BoundingBox; IsReservedSlot native fix)
+**Total wiki pages:** 38 (index, log, overview, glossary, 8 source,
+6 plugin, 5 concept, 15 entity, 2 operation)
+**Last ingest:** 2026-05-29 — DisconnectCleanup managed-API refactor
+(commit 1f7ae19: dropped sv_cheats + citadel_kick_disconnected_players for
+managed pawn+controller Remove(); reverses 2026-04-23 deadlock-game recommendation)

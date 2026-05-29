@@ -27,8 +27,10 @@ related:
   - "[[deathmatch]]"
   - "[[trooper-invasion]]"
   - "[[deadworks-runtime]]"
+  - "[[disconnect-cleanup]]"
+  - "[[disconnect-cleanup-managed-refactor]]"
 created: 2026-04-21
-updated: 2026-04-23
+updated: 2026-05-29
 confidence: high
 ---
 
@@ -237,15 +239,24 @@ Server.ExecuteCommand("citadel_kick_disconnected_players");
 Server.ExecuteCommand("sv_cheats 0");
 ```
 
-Current repo pattern does this work manually inside plugin
-`OnClientDisconnect` handlers — [[deathmatch|Deathmatch]]
-(`Deathmatch.cs:983-985`) and [[trooper-invasion|TrooperInvasion]]
-(`TrooperInvasion.cs:899-902`) both call `pawn.Remove()` +
-`controller.Remove()` per disconnecting slot. The native convar is a
-candidate replacement for just those two lines — the help text's "and
-removing them from any teams" suggests it also touches the team roster
-side, which the manual path does not do explicitly. Untested as of
-2026-04-23.
+**Tried and abandoned (2026-05-29).** The [[disconnect-cleanup|DisconnectCleanup]]
+plugin briefly used this `sv_cheats`-bracketed concommand, then commit `1f7ae19`
+replaced it with a direct managed-API `controller.GetHeroPawn()?.Remove();
+controller.Remove();` in `OnClientDisconnect`. Reasons the concommand lost out:
+it requires a `sv_cheats` toggle, and it sweeps *all* disconnected slots
+server-wide rather than the one client that fired the event. So the native
+concommand is **not** the current recommended path — prefer the per-client
+managed removal. See [[disconnect-cleanup-managed-refactor]].
+
+> Gap: the concommand's help text ("removing them from any teams") implies a
+> team-roster cleanup the manual pawn+controller `Remove()` does not explicitly
+> replicate. Whether roster state lingers after managed removal is untested.
+
+The per-disconnecting-slot entity removal now lives in
+[[disconnect-cleanup|DisconnectCleanup]]. [[deathmatch|Deathmatch]] and
+[[trooper-invasion|TrooperInvasion]] still handle `OnClientDisconnect` for their
+own session bookkeeping (human counts, stats) but no longer call
+`pawn.Remove()`/`controller.Remove()` themselves.
 
 [[lock-timer|LockTimer]] `OnClientDisconnect` only clears plugin-
 internal dicts (engine per-slot state, HUD maps); the convar doesn't
