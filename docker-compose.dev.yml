@@ -1,0 +1,42 @@
+# Dev server with plugin hot-reload — driven by the Makefile (`make dev MODE=...`).
+#
+# Builds the Deadworks server from the sibling ../deadworks checkout (which must
+# contain the hot-reload entrypoint, i.e. DEADWORKS_LIVE_PLUGINS support) and
+# serves plugins live from ./.dev-plugins. `make watch` rebuilds the mode's
+# plugins into that folder on every source change, and the running server
+# hot-reloads each changed DLL without a restart.
+#
+# Steam credentials and other settings come from .env (copy .env.example).
+#
+# The proton / gamefiles / dotnet-cache volumes are intentionally named the same
+# as the production docker-compose.yml so the ~20 GB game download and runtimes
+# are reused across both (same compose project name = same volumes).
+services:
+  dev:
+    build:
+      context: ../deadworks
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    environment:
+      DEADWORKS_LIVE_PLUGINS: "1"
+      SERVER_PORT: "${PORT:-27015}"
+      DEADWORKS_ENV_GAME_MODE: "${MODE:-dev}"
+      DEADWORKS_ENV_HOSTNAME: "Deadworks DEV — ${MODE:-dev}"
+    ports:
+      - "${PORT:-27015}:${PORT:-27015}/udp"
+      - "${PORT:-27015}:${PORT:-27015}/tcp"
+    volumes:
+      - ./.dev-plugins:/opt/live-plugins
+      - proton:/opt/proton
+      - gamefiles:/opt/gamefiles
+      - dotnet-cache:/opt/dotnet-cache
+      - gamedata-dev:/home/steam/server
+      - compatdata-dev:/home/steam/.steam/steam/steamapps/compatdata
+    restart: "no"
+
+volumes:
+  proton:
+  gamefiles:
+  dotnet-cache:
+  gamedata-dev:
+  compatdata-dev:
