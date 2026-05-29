@@ -28,6 +28,8 @@ public partial class TrooperInvasionPlugin
         // Direct Remove inside OnEntitySpawned AV'd under horde load, so cull via
         // deferred Remove (see 2026-04-22-onentityspawned-remove-deferral.md).
         var ent = args.Entity;
+        // Guardians we spawn report DesignerName "npc_trooper_boss" — never cull/scale them.
+        if (_guardianIndices.Contains(ent.EntityIndex)) return;
         if (!IsTrooperDesigner(ent.DesignerName)) return;
         int idx = ent.EntityIndex;
 

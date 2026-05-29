@@ -8,6 +8,35 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-05-29] — TrooperInvasion self-spawns tier1 lane Guardians
+
+- **Operation:** feature + ingest
+- **Sources:** `raw/notes/2026-05-29-trooper-invasion-guardians-self-spawn-solution.md`
+  (+ supporting `2026-05-29-dl-midtown-tier1-guardians-mode-invalid-proof.md`,
+  `2026-05-29-deadworks-usercmd-visitor-build-list-omission.md`)
+- **Pages updated (2):** `plugins/trooper-invasion.md` (new "Lane Guardians — self-spawned"
+  section + supersede banner + new `TrooperInvasion.Guardians.cs` in Files); `index.md`
+  (last-ingest banner).
+- **Key findings:** tier1 Guardians never spawned on the insecure dedicated server. VRF
+  decompile of `dl_midtown` `default_ents.vents_c` proved the map is **authored for**
+  Guardians (per-lane tier1 shops + zipline `guard_boss_name` wiring referencing
+  `boss_{combine,rebel}_t1_{blue,yellow,purple}`) but does **not place the npc_boss_tier1
+  entities** — they're spawned by a match-init code path the server never runs. Neither
+  `m_eGameState` pinning nor `game_mode/match_mode=Normal/Unranked` triggers them (modes
+  default to **Invalid**, not Normal as previously believed). **Fix:** self-spawn the 6 via
+  `CreateByDesignerName("npc_boss_tier1")` + `CEntityKeyValues` (`subclass_name=
+  "npc_boss_tier1"` is load-bearing) from `ArmWaves`. No crash (vs the boss-wave null-KV
+  crash — populated KV is the difference). **Gotcha:** spawned Guardians report
+  `DesignerName="npc_trooper_boss"`, so they self-culled via the friendly-trooper handler
+  until exempted by `_guardianIndices` (added before `Spawn()`).
+- **Supersedes:** the "dl_midtown has no tier1 Guardians" conclusion in
+  `2026-05-04-dl-midtown-no-tier1-guardians.md` (map IS authored for them; they're just not
+  map-placed entities) and the mode-related refutations therein (modes read Invalid, and
+  fixing that doesn't spawn Guardians).
+- **Aside:** `make dev` native link was broken — `../deadworks` commit `1b94487` added
+  `UsercmdVisitorRuntime.cpp` but not to `docker/build-native.sh`'s source list; fixed
+  (one line) in the deadworks repo.
+
 ## [2026-05-29] — extract StuckCommand plugin from TrooperInvasion
 
 - **Operation:** refactor (extract reusable plugin) + ingest

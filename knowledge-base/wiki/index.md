@@ -5,7 +5,17 @@ created: 2026-04-21
 updated: 2026-05-29
 ---
 
-_Last ingest: 2026-05-29 — **StuckCommand plugin extracted** from TrooperInvasion.
+_Last ingest: 2026-05-29 — **TrooperInvasion self-spawns tier1 lane Guardians.**
+VRF decompile of `dl_midtown` proved the map is authored for Guardians (per-lane tier1
+shops + `guard_boss_name` zipline wiring) but doesn't place the `npc_boss_tier1` entities —
+a match-init path the insecure server never runs. Neither `m_eGameState` nor `game_mode`/
+`match_mode` (which default to **Invalid**) triggers them. Fix: self-spawn the 6 via
+`CreateByDesignerName` + `CEntityKeyValues` (`subclass_name="npc_boss_tier1"`) from
+`ArmWaves`; exempt them from trooper-culling (`_guardianIndices`) since they report
+`DesignerName="npc_trooper_boss"`. New `TrooperInvasion.Guardians.cs`; [[trooper-invasion]]
+updated. Supersedes the 2026-05-04 "no tier1 on dl_midtown" conclusion._
+
+_Prev ingest: 2026-05-29 — **StuckCommand plugin extracted** from TrooperInvasion.
 New plugin page [[stuck-command]] + source note. `!stuck`/`!suicide` moved out of
 `TrooperInvasionPlugin` into a standalone reusable plugin, composed into `normal`,
 `lock-timer`, and `trooper-invasion` via `gamemodes.json`. **Deliberately NOT added to

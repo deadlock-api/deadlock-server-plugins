@@ -17,7 +17,9 @@ sources:
   - knowledge-base/raw/notes/2026-05-02-trooper-invasion-world-reset-changelevel.md
   - knowledge-base/raw/notes/2026-05-02-trooper-invasion-dead-trooper-reconciler.md
   - knowledge-base/raw/notes/2026-05-29-trooper-invasion-file-split.md
+  - knowledge-base/raw/notes/2026-05-29-trooper-invasion-guardians-self-spawn-solution.md
   - ../TrooperInvasion/TrooperInvasion.cs
+  - ../TrooperInvasion/TrooperInvasion.Guardians.cs
   - ../TrooperInvasion/WaveTuning.cs
   - ../TrooperInvasion/SessionStats.cs
   - ../TrooperInvasion/TrooperInvasion.Waves.cs
@@ -39,6 +41,12 @@ created: 2026-04-22
 updated: 2026-05-29
 confidence: high
 ---
+
+> **Update 2026-05-29:** Lane **Guardians** (tier1) are now self-spawned by the plugin —
+> see the [[#Lane Guardians — self-spawned (tier1)]] section. This **supersedes the earlier
+> "dl_midtown has no tier1 Guardians" conclusion**: the map is authored for them (shops +
+> wiring) but doesn't place the boss entities, and the engine's match-init spawn path never
+> runs on the insecure dedicated server.
 
 # TrooperInvasion plugin
 
@@ -325,6 +333,8 @@ All commands use the v0.4.5 [[command-attribute|`[Command]`]] attribute
   - `TrooperInvasion.EndMode.cs` — patron death, victory/defeat, changelevel reset (`partial`)
   - `TrooperInvasion.Players.cs` — join/leave, hero pick, spawn ritual (`partial`)
   - `TrooperInvasion.Commands.cs` — chat commands (`partial`)
+  - `TrooperInvasion.Guardians.cs` — self-spawned tier1 lane Guardians (`partial`,
+    added 2026-05-29; see the Lane Guardians section above)
   - `Stats/StatsClient.cs` — PostHog client (already separate)
 - `TrooperInvasion/TrooperInvasion.csproj` — triple-mode reference pattern
   (DeadlockDir / ProjectReference / Docker fallback), identical to
@@ -409,6 +419,60 @@ troopers to `npc_trooper_boss` via the super-trooper progression (see
 `citadel_super_trooper_gold_mult`), so the plugin's `_trooperDesigners`
 list and kill-attribution filters still recognise bosses without any
 manual spawn.
+
+## Lane Guardians — self-spawned (tier1)
+
+Tier1 **Guardians** (the forward lane defensive bosses) never appeared on this server.
+Root cause, established by decompiling `dl_midtown`'s entity lump
+(`maps/dl_midtown/entities/default_ents.vents_c`) with [[deadworks-sourcesdk|ValveResourceFormat]]:
+
+- `dl_midtown` is **authored for Guardians** — it places the per-lane tier1 **shops** (only
+  tier1 has shops), zipline nodes, and `guard_boss_name` wiring, all referencing
+  `boss_{combine,rebel}_t1_{blue,yellow,purple}` (3 lanes × 2 teams = 6) — but it does
+  **not place the `npc_boss_tier1` entities** and has no tier1 spawn anchors. tier2/tier3/
+  Patron *are* map-placed (hence they always appear).
+- So Guardians are spawned by a matchmaking/objective-init code path that an
+  `-insecure -allow_no_lobby_connect` dedicated server never runs. The class is live in
+  `server.dll` (`npc_boss_tier1.cpp`, `citadel_t1_boss_*` convars, `k_eCitadelObjective_
+  TeamN_Tier1_LaneM` slots).
+- **Not triggerable by state/mode:** pinning `m_eGameState=GameInProgress` does nothing
+  (the engine reaches it on its own ~clock 2s), and forcing `game_mode=Normal`/
+  `match_mode=Unranked` (which default to **Invalid** on a plugin server, *not* Normal as a
+  prior note claimed) yields the value but still zero Guardians. Both verified live.
+
+**Solution — self-spawn** (`TrooperInvasion.Guardians.cs`): create the 6 with the managed
+entity API at the authored lane positions (taken from the `guard_boss_name` zipline-node
+origins), driven from `ArmWaves` → `MaybeSpawnGuardians` (once per map; not a startup timer,
+because timers don't tick while the server hibernates with no players):
+
+```csharp
+var ekv = new CEntityKeyValues();
+ekv.SetString("targetname", bossName);      // boss_rebel_t1_yellow, …
+ekv.SetString("subclass_name", "npc_boss_tier1");   // load-bearing KV (VData)
+ekv.SetInt("teamnumber", team);             // 2=Amber/rebels, 3=Sapphire/combine
+ekv.SetInt("LaneNum", lane);                // 1=Yellow, 4=Blue, 6=Purple
+ekv.SetVector("origin", pos); ekv.SetVector("angles", Vector3.Zero);
+var g = CBaseEntity.CreateByDesignerName("npc_boss_tier1");
+g.Spawn(ekv); g.Teleport(pos); g.TeamNum = team;
+```
+
+Spawns alive at 5500 HP, no native crash (contrast the [[#Boss waves — removed (native crash on first spawn)|boss-wave]] null-KV crash — the difference is the populated `CEntityKeyValues`).
+
+**Load-bearing gotcha — self-cull.** A spawned `npc_boss_tier1` reports
+`DesignerName == "npc_trooper_boss"`. So the [[#Friendly-trooper culling]] in
+`OnEntitySpawned` caught them — friendly (team-2) ones were `Remove()`d within <0.5s and
+enemy (team-3) ones were HP-scaled/cap-counted (symptom: "enemy Guardians appear, mine
+don't"). Fix: track spawned indices in `_guardianIndices` (added **before** `Spawn()`, since
+`OnEntitySpawned` fires synchronously during `Spawn()`) and early-return for them at the top
+of `OnEntitySpawned`.
+
+`EnsureNormalMatchMode()` (sets `game_mode`/`match_mode`=Normal/Unranked at startup) is kept
+because Guardians were validated with it on; it is **not proven required** and is easy to drop
+if it perturbs the Invalid-mode-balanced economy. Open: the self-spawned boss isn't in the
+engine objective table (`citadel_bot_list_objectives_ent`), so tier1-shop / objective-registry
+wiring is unverified; Guardians spawn once per map and don't respawn until changelevel.
+
+See `raw/notes/2026-05-29-trooper-invasion-guardians-self-spawn-solution.md`.
 
 ## What's intentionally missing (vs Deathmatch)
 

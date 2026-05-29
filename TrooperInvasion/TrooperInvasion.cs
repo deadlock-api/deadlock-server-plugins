@@ -106,6 +106,9 @@ public partial class TrooperInvasionPlugin : DeadworksPluginBase
         _humanPatronWeakenAt = null;
         _enemyPatronWeakenAt = null;
         _stats.Reset();
+
+        EnsureNormalMatchMode();
+        ResetGuardians();
     }
 
     private int HumanPlayerCount() => _humanCount;

@@ -40,6 +40,7 @@ public partial class TrooperInvasionPlugin
             });
         }
         SetWaveTimer(FirstWaveGraceSeconds, () => { if (_wavesActive) RunWave(); });
+        MaybeSpawnGuardians();
     }
 
     private void DisarmWaves(string reason, bool cullTroopers = true)
