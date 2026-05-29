@@ -13,11 +13,13 @@ public class DisconnectCleanupPlugin : DeadworksPluginBase
 
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
     {
-        // Engine-native sweep: clears disconnected players from any teams.
-        // Bracketed with sv_cheats because the concommand is cheat-flagged.
-        Server.ExecuteCommand("sv_cheats 1");
-        Server.ExecuteCommand("citadel_kick_disconnected_players");
-        Server.ExecuteCommand("sv_cheats 0");
+        // Directly remove the disconnecting player's pawn and controller via the
+        // managed API — avoids the cheat-flagged citadel_kick_disconnected_players
+        // concommand (no sv_cheats toggle, and scoped to just this client).
+        var controller = args.Controller;
+        if (controller == null) return;
+        controller.GetHeroPawn()?.Remove();
+        controller.Remove();
     }
 
     public override void OnUnload()
