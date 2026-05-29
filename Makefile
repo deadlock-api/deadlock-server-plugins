@@ -78,7 +78,7 @@ check-env:
 
 build: ## Build a mode's plugins once into ./.dev-plugins (no watch)
 	@$(require_mode)
-	mkdir -p '$(LIVE_DIR)'
+	rm -rf '$(LIVE_DIR)'; mkdir -p '$(LIVE_DIR)'   # only this mode's plugins
 	for p in $$plugins; do
 		csproj=$(call csproj_for,$$p)
 		if [ -z "$$csproj" ]; then echo "  (skip $$p: no .csproj)"; continue; fi
@@ -88,7 +88,7 @@ build: ## Build a mode's plugins once into ./.dev-plugins (no watch)
 
 dev: check-env ## Start the server and hot-reload all of MODE's plugins (Ctrl-C to stop)
 	@$(require_mode)
-	mkdir -p '$(LIVE_DIR)'
+	rm -rf '$(LIVE_DIR)'; mkdir -p '$(LIVE_DIR)'   # only this mode's plugins load
 
 	# 1. Warm-up build (serial) so the shared DeadworksManaged.Api builds once —
 	#    avoids parallel build races between the per-plugin watchers below.
