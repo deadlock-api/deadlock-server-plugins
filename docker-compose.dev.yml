@@ -28,10 +28,15 @@ services:
     volumes:
       - ./.dev-plugins:/opt/live-plugins
       - proton:/opt/proton
-      - gamefiles:/opt/gamefiles
       - dotnet-cache:/opt/dotnet-cache
       - gamedata-dev:/home/steam/server
       - compatdata-dev:/home/steam/.steam/steam/steamapps/compatdata
+      # Game files. Default: a named volume that SteamCMD downloads into (~40GB,
+      # needs a Steam account that owns Deadlock). To reuse a local install and
+      # skip the download, set GAMEFILES_MOUNT in .env to a bind mount, e.g.:
+      #   GAMEFILES_MOUNT=/home/you/.steam/steam/steamapps/common/Deadlock:/opt/gamefiles:ro
+      # The entrypoint detects the present game files and skips SteamCMD.
+      - ${GAMEFILES_MOUNT:-gamefiles:/opt/gamefiles}
     restart: "no"
 
 volumes:
