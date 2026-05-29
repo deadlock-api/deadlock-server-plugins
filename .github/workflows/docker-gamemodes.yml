@@ -55,6 +55,8 @@ jobs:
               - 'DisconnectCleanup/**'
             HeroSelectOnNextSpawn:
               - 'HeroSelectOnNextSpawn/**'
+            StuckCommand:
+              - 'StuckCommand/**'
 
       - name: Compute gamemode matrix
         id: compute

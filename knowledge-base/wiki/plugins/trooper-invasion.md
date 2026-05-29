@@ -16,7 +16,15 @@ sources:
   - knowledge-base/raw/notes/2026-04-28-trooper-invasion-friendly-guardian-false-defeat.md
   - knowledge-base/raw/notes/2026-05-02-trooper-invasion-world-reset-changelevel.md
   - knowledge-base/raw/notes/2026-05-02-trooper-invasion-dead-trooper-reconciler.md
+  - knowledge-base/raw/notes/2026-05-29-trooper-invasion-file-split.md
   - ../TrooperInvasion/TrooperInvasion.cs
+  - ../TrooperInvasion/WaveTuning.cs
+  - ../TrooperInvasion/SessionStats.cs
+  - ../TrooperInvasion/TrooperInvasion.Waves.cs
+  - ../TrooperInvasion/TrooperInvasion.Troopers.cs
+  - ../TrooperInvasion/TrooperInvasion.EndMode.cs
+  - ../TrooperInvasion/TrooperInvasion.Players.cs
+  - ../TrooperInvasion/TrooperInvasion.Commands.cs
   - ../TrooperInvasion/TrooperInvasion.csproj
 related:
   - "[[deadlock-game]]"
@@ -28,7 +36,7 @@ related:
   - "[[deathmatch]]"
   - "[[examples-index]]"
 created: 2026-04-22
-updated: 2026-05-02
+updated: 2026-05-29
 confidence: high
 ---
 
@@ -303,11 +311,21 @@ All commands use the v0.4.5 [[command-attribute|`[Command]`]] attribute
 | `!stopwaves` | chat | Manual pause |
 | `!nextwave` | chat | Trigger next wave immediately (dev) |
 | `!hero <name>` | chat | Fuzzy-match hero swap (multi-word: `grey talon`) |
-| `!stuck` / `!suicide` | chat | `pawn.Hurt(999999f)` to respawn |
+| `!stuck` / `!suicide` | chat | `pawn.Hurt(999999f)` to respawn — **provided by the standalone [[stuck-command]] plugin** (extracted 2026-05-29), composed into this gamemode via `gamemodes.json`. The `!help` line is retained here. |
 
 ## Files
 
-- `TrooperInvasion/TrooperInvasion.cs` — single-file plugin (~500 LOC)
+- `TrooperInvasion/TrooperInvasion.cs` — plugin core: config, fields, game
+  constants, lifecycle (`OnLoad`/`OnStartupServer`/`OnUnload`). Split 2026-05-29
+  from a 1045-line single class into focused files (no behavioural change):
+  - `WaveTuning.cs` — static, pure difficulty constants + curves (player/wave/round)
+  - `SessionStats.cs` — telemetry counters + `RoundPlayerStats` + PostHog/chat emission
+  - `TrooperInvasion.Waves.cs` — wave scheduler + round cycle (`partial`)
+  - `TrooperInvasion.Troopers.cs` — enemy/friendly trooper spawn handling (`partial`)
+  - `TrooperInvasion.EndMode.cs` — patron death, victory/defeat, changelevel reset (`partial`)
+  - `TrooperInvasion.Players.cs` — join/leave, hero pick, spawn ritual (`partial`)
+  - `TrooperInvasion.Commands.cs` — chat commands (`partial`)
+  - `Stats/StatsClient.cs` — PostHog client (already separate)
 - `TrooperInvasion/TrooperInvasion.csproj` — triple-mode reference pattern
   (DeadlockDir / ProjectReference / Docker fallback), identical to
   StatusPoker's csproj minus the assembly name

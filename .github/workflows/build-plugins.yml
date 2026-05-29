@@ -41,6 +41,8 @@ jobs:
               - 'DisconnectCleanup/**'
             HeroSelectOnNextSpawn:
               - 'HeroSelectOnNextSpawn/**'
+            StuckCommand:
+              - 'StuckCommand/**'
 
       - name: Compute plugin matrix
         id: compute

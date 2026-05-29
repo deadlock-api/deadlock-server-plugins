@@ -8,6 +8,41 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-05-29] — extract StuckCommand plugin from TrooperInvasion
+
+- **Operation:** refactor (extract reusable plugin) + ingest
+- **Source:** `raw/notes/2026-05-29-stuck-command-extraction.md`
+- **Pages created (1):** `plugins/stuck-command.md`
+- **Pages updated (2):** `plugins/trooper-invasion.md` (command table note that
+  `!stuck`/`!suicide` now come from [[stuck-command]]); `index.md` (new plugin in
+  catalog, totals 38→39, last-ingest banner).
+- **Key findings:** `!stuck`/`!suicide` moved out of `TrooperInvasionPlugin` into a
+  standalone `StuckCommandPlugin` (csproj cloned from HealOnSpawn). Wired into
+  `gamemodes.json` for `normal`, `lock-timer`, `trooper-invasion`, plus paths-filter
+  entries in both CI workflows. **Deliberately excluded from deathmatch:** Deathmatch
+  (`Deathmatch.cs:852`) has its own stuck/suicide that clears spawn-protection
+  invulnerability before the lethal hit — the generic plugin would duplicate-register
+  and be absorbed. Confirmed no other plugin (StatusPoker/Hostname/Feedback/LockTimer)
+  registers stuck/suicide. Makefile + docker-gamemodes read `gamemodes.json` dynamically,
+  so no hardcoded plugin list to update. Both new/modified projects build 0 errors.
+- **Next:** none.
+
+## [2026-05-29] — TrooperInvasion single-class file split (refactor)
+
+- **Operation:** refactor + wiki maintenance (no ingest discussion needed — structural only)
+- **Source:** `raw/notes/2026-05-29-trooper-invasion-file-split.md`
+- **Pages updated (1):** `plugins/trooper-invasion.md` — corrected the stale
+  "single-file plugin (~500 LOC)" claim in the Files section; now lists the
+  8-file layout. Added new source files + the raw note to frontmatter; bumped
+  `updated` to 2026-05-29.
+- **Key findings:** `TrooperInvasionPlugin` (1045 lines, one class/file) split with
+  **zero behavioural change** into two real collaborators (`WaveTuning` static pure
+  tuning, `SessionStats` telemetry) + five `partial class` files by concern
+  (`.Waves`/`.Troopers`/`.EndMode`/`.Players`/`.Commands`). `RoundLength` moved to
+  `WaveTuning`. Builds 0 errors against the sibling-deadworks ProjectReference.
+  No csproj change (default glob compiles all `.cs`).
+- **Next:** none.
+
 ## [2026-05-29] — ingest DisconnectCleanup managed-API refactor
 
 - **Operation:** ingest (repo source + commit)

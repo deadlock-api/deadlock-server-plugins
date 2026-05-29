@@ -5,7 +5,16 @@ created: 2026-04-21
 updated: 2026-05-29
 ---
 
-_Last ingest: 2026-05-29 — **DisconnectCleanup managed-API refactor** (commit `1f7ae19`).
+_Last ingest: 2026-05-29 — **StuckCommand plugin extracted** from TrooperInvasion.
+New plugin page [[stuck-command]] + source note. `!stuck`/`!suicide` moved out of
+`TrooperInvasionPlugin` into a standalone reusable plugin, composed into `normal`,
+`lock-timer`, and `trooper-invasion` via `gamemodes.json`. **Deliberately NOT added to
+deathmatch** — [[deathmatch]] keeps its own variant that clears spawn protection before
+the lethal hit; the generic one would duplicate-register and be absorbed. Same session:
+TrooperInvasion's 1045-line single class split into 8 files (partials + `WaveTuning` /
+`SessionStats`), no behavioural change — see [[trooper-invasion]] Files section._
+
+_Prev ingest: 2026-05-29 — **DisconnectCleanup managed-API refactor** (commit `1f7ae19`).
 New plugin page [[disconnect-cleanup]] + source [[disconnect-cleanup-managed-refactor]].
 `OnClientDisconnect` moved off the `sv_cheats`-bracketed `citadel_kick_disconnected_players`
 concommand to a direct `controller.GetHeroPawn()?.Remove(); controller.Remove();`. This
@@ -105,6 +114,7 @@ what to load — keep it concise and current.
 - [[disconnect-cleanup]] — removes a disconnecting player's pawn+controller in `OnClientDisconnect`
 - [[lock-timer]] — zone-based lock-timer gamemode with YAML zone config
 - [[status-poker]] — periodic status/keepalive poker plugin
+- [[stuck-command]] — standalone `!stuck`/`!suicide` self-respawn command, reused across gamemodes
 - [[trooper-invasion]] — PvE co-op gamemode, all humans on team 2 vs engine NPCs
 - [[examples-index]] — index of the 11 Deadworks example plugins (AutoRestart,
   ChatRelay, Dumper, ExampleTimer, ItemRotation, ItemTest, RollTheDice,
@@ -200,8 +210,8 @@ _No comparisons yet._
 
 ---
 
-**Total wiki pages:** 38 (index, log, overview, glossary, 8 source,
-6 plugin, 5 concept, 15 entity, 2 operation)
-**Last ingest:** 2026-05-29 — DisconnectCleanup managed-API refactor
-(commit 1f7ae19: dropped sv_cheats + citadel_kick_disconnected_players for
-managed pawn+controller Remove(); reverses 2026-04-23 deadlock-game recommendation)
+**Total wiki pages:** 39 (index, log, overview, glossary, 8 source,
+7 plugin, 5 concept, 15 entity, 2 operation)
+**Last ingest:** 2026-05-29 — StuckCommand plugin extracted from TrooperInvasion
+(new [[stuck-command]] page; `!stuck`/`!suicide` reused across normal/lock-timer/
+trooper-invasion; excluded from deathmatch which keeps its spawn-protection-aware variant)
