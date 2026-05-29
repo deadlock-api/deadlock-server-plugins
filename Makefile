@@ -20,12 +20,15 @@ SHELL := /bin/bash
 MODE        ?=
 PORT        ?= 27015
 LIVE_DIR    := .dev-plugins
+LIVE_ABS    := $(abspath $(LIVE_DIR))
 COMPOSE     := docker-compose.dev.yml
 DEADWORKS   := ../deadworks
 GAMEMODES   := gamemodes.json
 NOOP        := .staging/deploy-noop
 DC          := MODE='$(MODE)' PORT='$(PORT)' docker compose -f $(COMPOSE)
-PUBLISH_ARGS := --nologo -p:NoWarn=CS1591 -p:DeadlockManagedDir='$(abspath $(NOOP))'
+# Use MSBuild's /p: form (not -p:): `dotnet watch` parses -p as --project and
+# rejects two of them; /p: tokens are forwarded straight to the build.
+PUBLISH_ARGS := --nologo /p:NoWarn=CS1591 /p:DeadlockManagedDir='$(abspath $(NOOP))'
 
 .DEFAULT_GOAL := help
 
@@ -108,12 +111,13 @@ dev: check-env ## Start the server and hot-reload all of MODE's plugins (Ctrl-C 
 	trap cleanup EXIT INT TERM
 
 	# 4. One file-watcher per plugin, each re-publishing into the live folder.
+	#    cd into the plugin dir (watch auto-detects the single csproj there);
+	#    `dotnet watch --project` leaks the flag through to MSBuild on this SDK.
 	echo "==> watching $$(echo $$plugins | wc -w) plugin(s) — edit + save to hot-reload"
 	for p in $$plugins; do
 		csproj=$(call csproj_for,$$p)
 		[ -z "$$csproj" ] && continue
-		dotnet watch --project "$$csproj" publish -o '$(LIVE_DIR)' $(PUBLISH_ARGS) \
-			--non-interactive &
+		( cd "$$p" && exec dotnet watch --non-interactive publish -o '$(LIVE_ABS)' $(PUBLISH_ARGS) ) &
 	done
 
 	# 5. Follow server logs in the foreground; wait blocks until Ctrl-C.
@@ -128,7 +132,7 @@ watch: ## Watch + hot-reload MODE's plugins (assumes the server is already up)
 		csproj=$(call csproj_for,$$p)
 		[ -z "$$csproj" ] && continue
 		echo "==> watching $$p"
-		dotnet watch --project "$$csproj" publish -o '$(LIVE_DIR)' $(PUBLISH_ARGS) &
+		( cd "$$p" && exec dotnet watch --non-interactive publish -o '$(LIVE_ABS)' $(PUBLISH_ARGS) ) &
 	done
 	wait
 
