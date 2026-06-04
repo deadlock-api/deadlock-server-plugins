@@ -2,10 +2,21 @@
 title: Wiki Index
 type: index
 created: 2026-04-21
-updated: 2026-05-29
+updated: 2026-06-04
 ---
 
-_Last ingest: 2026-05-29 — **TrooperInvasion self-spawns tier1 lane Guardians.**
+_Last ingest: 2026-06-04 — **Patron is `npc_boss_tier3`, NOT `npc_barrack_boss`.**
+TrooperInvasion showed "Defeat" the instant the first base boss fell because
+`PatronDesigner` pointed at `npc_barrack_boss` — which game-files `npc_units.vdata`
+proves is the **Watcher** (6 "base bosses" per team), not the Patron. The real Patron is
+`npc_boss_tier3` (model `patron_amber.vmdl`, `m_PatronKilledSound`, Shrine→Patron phases).
+Fix: `PatronDesigner = "npc_boss_tier3"`; `IsGuardianDesigner` retargeted to
+`npc_boss_tier2 || npc_barrack_boss` (Walker + Watcher sub-objectives, Patron excluded).
+Corrects the [[deadlock-game]] classname table and [[trooper-invasion]] win/lose section;
+the 2026-04-28 weaken-window analysis was built on the misidentification and is now flagged
+unverified. New source note `2026-06-04-patron-is-tier3-not-barrack-boss.md`._
+
+_Prev ingest: 2026-05-29 — **TrooperInvasion self-spawns tier1 lane Guardians.**
 VRF decompile of `dl_midtown` proved the map is authored for Guardians (per-lane tier1
 shops + `guard_boss_name` zipline wiring) but doesn't place the `npc_boss_tier1` entities —
 a match-init path the insecure server never runs. Neither `m_eGameState` nor `game_mode`/

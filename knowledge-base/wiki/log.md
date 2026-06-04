@@ -8,6 +8,32 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-06-04] — Patron is npc_boss_tier3, not npc_barrack_boss (false-defeat fix)
+
+- **Operation:** bug fix + ingest
+- **Source:** game-files `deadlock-assets-api/vdata/npc_units.vdata` (decompiled
+  from the local Steam install mounted via `GAMEFILES_MOUNT`); user bug report.
+- **Raw note added:** `raw/notes/2026-06-04-patron-is-tier3-not-barrack-boss.md`
+- **Code changed:** `TrooperInvasion/TrooperInvasion.cs`
+  (`PatronDesigner = "npc_boss_tier3"`; `IsGuardianDesigner` →
+  `npc_boss_tier2 || npc_barrack_boss`), comment fixes in
+  `TrooperInvasion/TrooperInvasion.EndMode.cs`. Builds clean.
+- **Pages updated:** [[trooper-invasion]] (win/lose section rewritten, new
+  Patron-identity table, weaken-window flagged unverified), [[deadlock-game]]
+  (NPC classname table corrected), `index.md`, `log.md`.
+- **Key finding:** TrooperInvasion declared "Defeat" the instant the first base
+  boss fell because `PatronDesigner` pointed at `npc_barrack_boss`. The
+  `npc_boss_tier3` vdata block carries `m_sModelName = patron_amber.vmdl`,
+  `m_PatronKilledSound`, `m_PatronTransformStartSound`, `m_nPhase2Health`,
+  `m_flPostShrineTransition` — it is the phased Shrine→Patron win objective
+  (1/team). `npc_barrack_boss` is the **Watcher** (6/team, the "base bosses").
+- **Contradiction resolved (newer supersedes):** every prior page/note that
+  called `npc_barrack_boss` the "Patron" (notably the 2026-04-28 friendly-guardian
+  false-defeat note and the 2026-05-04 census line) was wrong on the label. The
+  2026-04-28 weaken-window machinery is retained but retargeted at `npc_boss_tier3`
+  and explicitly flagged **unverified** pending in-game testing (phase1→phase2
+  transform interaction with the HP-pin still needs live confirmation).
+
 ## [2026-05-29] — TrooperInvasion self-spawns tier1 lane Guardians
 
 - **Operation:** feature + ingest

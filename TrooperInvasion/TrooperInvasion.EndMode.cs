@@ -27,9 +27,9 @@ public partial class TrooperInvasionPlugin
             return HookResult.Continue;
         }
 
-        // A Base Guardian / Walker death fires an engine-scripted "weaken Patron"
+        // A Walker / Watcher death fires an engine-scripted "weaken Patron"
         // hit whose magnitude exceeds Patron HP, with the attacker propagated from
-        // whoever killed the guardian — so attacker-identity can't distinguish it
+        // whoever killed the sub-objective — so attacker-identity can't distinguish it
         // from a real killing blow. The only reliable signal is the time window
         // from the guardian's entity_killed event, gated on damage magnitude so
         // legitimate small hits during the window still pass through.
@@ -71,16 +71,17 @@ public partial class TrooperInvasionPlugin
         if (killed == null) return HookResult.Continue;
 
         // Open the weaken-Patron absorb window — see OnTakeDamage. entity_killed
-        // for the guardian fires before the scripted hit on the Patron, so the
-        // timestamp is reliably set when the gate runs.
+        // for the sub-objective (Walker/Watcher) fires before the scripted hit on
+        // the Patron, so the timestamp is reliably set when the gate runs.
         if (IsGuardianDesigner(killed.DesignerName))
         {
             if (killed.TeamNum == HumanTeam) _humanPatronWeakenAt = DateTime.UtcNow;
             else if (killed.TeamNum == EnemyTeam) _enemyPatronWeakenAt = DateTime.UtcNow;
         }
 
-        // Patron deaths are intercepted in OnTakeDamage, so npc_barrack_boss never
-        // reaches here.
+        // The Patron (npc_boss_tier3) death is intercepted in OnTakeDamage, so it
+        // never reaches here. Watchers (npc_barrack_boss) do die normally now — they
+        // are not IsTrooperDesigner, so they skip the trooper-bounty branch below.
         if (IsTrooperDesigner(killed.DesignerName) && killed.TeamNum == EnemyTeam)
         {
             var trooperKiller = CBaseEntity.FromIndex<CCitadelPlayerPawn>(args.EntindexAttacker);

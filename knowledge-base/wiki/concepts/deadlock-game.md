@@ -30,7 +30,7 @@ related:
   - "[[disconnect-cleanup]]"
   - "[[disconnect-cleanup-managed-refactor]]"
 created: 2026-04-21
-updated: 2026-05-29
+updated: 2026-06-04
 confidence: high
 ---
 
@@ -170,8 +170,14 @@ Stripped by [[deathmatch]] when deathmatch mode loads (deathmatch-3636296d):
 - `npc_boss_tier1` = Guardian
 - `npc_boss_tier2` = **Walker** (Tier 2 tower, per-team, carries
   `m_eLaneColor`)
-- `npc_boss_tier3` = Base Guardian / Shrine
-- `npc_barrack_boss` = Patron
+- `npc_boss_tier3` = **Patron** — the phased Shrine→Patron win objective
+  (1 per team). Confirmed from game-files `npc_units.vdata`: the
+  `npc_boss_tier3` block carries `models/npc/patron_amber/patron_amber.vmdl`,
+  `m_PatronKilledSound`, `m_PatronTransformStartSound`, `m_nPhase2Health`,
+  `m_flPostShrineTransition`. (Earlier this page mislabeled it "Base
+  Guardian / Shrine" — that was wrong; see [[trooper-invasion]] win/lose.)
+- `npc_barrack_boss` = **Watcher** — 6 per team (the "base bosses"), NOT
+  the Patron. Earlier mislabeled "Patron"; corrected 2026-06-04.
 - `npc_base_defense_sentry`
 - `npc_trooper_boss`
 

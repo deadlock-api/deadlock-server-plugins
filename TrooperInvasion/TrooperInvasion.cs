@@ -21,11 +21,21 @@ public partial class TrooperInvasionPlugin : DeadworksPluginBase
     private const int HumanTeam = 2;
     private const int EnemyTeam = 3;
 
-    private const string PatronDesigner = "npc_barrack_boss";
+    // npc_boss_tier3 IS the Patron — the phased Shrine→Patron win objective (model
+    // patron_amber/mother_sapphire, m_PatronKilledSound, m_nPhase2Health), one per
+    // team. Verified in game-files npc_units.vdata + live citadel_bot_list_objectives_ent.
+    // The 6-per-team npc_barrack_boss are Watchers ("base bosses"), NOT the Patron —
+    // killing one must never end the mode. (This const previously pointed at the
+    // Watcher, which made the first base boss to fall trigger a false Defeat.)
+    private const string PatronDesigner = "npc_boss_tier3";
 
-    // npc_boss_tier3 = Base Guardian / Shrine, npc_boss_tier2 = Walker.
+    // Sub-objectives that shield the Patron: Walker (npc_boss_tier2) and Watcher
+    // (npc_barrack_boss). Their death can fire an engine-scripted weaken hit on the
+    // same team's Patron; OnTakeDamage uses the resulting window to keep from
+    // mis-reading that scripted hit as a real killing blow. Excludes npc_boss_tier3,
+    // which is the Patron itself.
     private static bool IsGuardianDesigner(string designer) =>
-        designer == "npc_boss_tier3" || designer == "npc_boss_tier2";
+        designer == "npc_boss_tier2" || designer == "npc_barrack_boss";
     private const double GuardianWeakenWindowSeconds = 2.0;
     private DateTime? _humanPatronWeakenAt;
     private DateTime? _enemyPatronWeakenAt;

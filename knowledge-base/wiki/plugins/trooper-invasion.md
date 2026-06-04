@@ -18,6 +18,7 @@ sources:
   - knowledge-base/raw/notes/2026-05-02-trooper-invasion-dead-trooper-reconciler.md
   - knowledge-base/raw/notes/2026-05-29-trooper-invasion-file-split.md
   - knowledge-base/raw/notes/2026-05-29-trooper-invasion-guardians-self-spawn-solution.md
+  - knowledge-base/raw/notes/2026-06-04-patron-is-tier3-not-barrack-boss.md
   - ../TrooperInvasion/TrooperInvasion.cs
   - ../TrooperInvasion/TrooperInvasion.Guardians.cs
   - ../TrooperInvasion/WaveTuning.cs
@@ -38,7 +39,7 @@ related:
   - "[[deathmatch]]"
   - "[[examples-index]]"
 created: 2026-04-22
-updated: 2026-05-29
+updated: 2026-06-04
 confidence: high
 ---
 
@@ -214,17 +215,23 @@ lifted from `TagPlugin.cs:342-346`.
 
 ## Other gameplay state
 
-- **Map NPCs left intact** (opposite of [[deathmatch]]) — Sapphire patron,
-  walkers, guardians, sentries are the gameplay content.
+- **Map NPCs left intact** (opposite of [[deathmatch]]) — Patrons
+  (`npc_boss_tier3`), Walkers (`npc_boss_tier2`), Watchers
+  (`npc_barrack_boss`), sentries are the gameplay content.
 - **Gameover suppressed** — `OnGameoverMsg` and `OnRoundEnd` return
   `HookResult.Stop`. That alone keeps the mode in-progress indefinitely
   without touching the HUD clock or `m_eGameState`. Earlier iterations
   wrote the 5-field anchor + `eGameState` every tick; all that code was
   deleted. Engine's native HUD clock runs correctly on its own.
-- **Win/lose conditions** — `entity_killed` listens for `npc_barrack_boss`
-  (patron) deaths. Team-2 patron destroyed → defeat; team-3 patron
-  destroyed → victory; either way `_modeOver = true`, scheduler stops.
-  See "False-defeat suppression" below for the guardian-scripted-hit guard.
+- **Win/lose conditions** — `OnTakeDamage` intercepts the killing blow on the
+  **Patron** (`PatronDesigner = "npc_boss_tier3"`). Team-2 Patron destroyed →
+  defeat; team-3 Patron destroyed → victory; either way `_modeOver = true`,
+  scheduler stops. **Corrected 2026-06-04:** this previously pointed at
+  `npc_barrack_boss`, which is the **Watcher** (6 "base bosses" per team), not
+  the Patron — so the first base boss to fall triggered a false Defeat. The real
+  Patron is `npc_boss_tier3` (game-files `npc_units.vdata`: `m_PatronKilledSound`,
+  Shrine→Patron phases). See [[deadlock-game]] NPC classnames and the
+  "False-defeat suppression" guard below.
 - **Flex slots** force-unlocked at startup (schema-write pattern, same as
   [[deathmatch]]).
 - **Fast respawn** — `citadel_player_spawn_time_max_respawn_time = 3`.
@@ -232,17 +239,39 @@ lifted from `TagPlugin.cs:342-346`.
   Amber-side hero lock).
 - **Allow purchasing anywhere** — `citadel_allow_purchasing_anywhere = 1`.
 
-## False-defeat suppression — guardian scripted-weaken gate
+## Patron identity correction (2026-06-04)
 
-When a `npc_boss_tier2` or `npc_boss_tier3` (Base Guardian) dies, the engine fires a
-**scripted large-damage event on the same team's Patron** (`npc_barrack_boss`) to weaken
-it. The attacker on that scripted event is propagated from **whatever killed the guardian**
-— i.e. a trooper that kills the friendly tier3 propagates itself as attacker with
-`IsTrooperDesigner = true`.
+The whole win/lose subsystem was originally written against a misidentified Patron.
+Authoritative game-files (`deadlock-assets-api/vdata/npc_units.vdata`, decompiled from
+the local Steam install mounted via `GAMEFILES_MOUNT`) settle it:
 
-**The bug (fixed 2026-04-28, commit `196b442`):** the `OnTakeDamage` path's `realKill`
-check — intended to only allow troopers to end the game by killing the enemy Patron
-directly — also fired for this scripted weaken hit, calling
+| DesignerName | Real objective | Count / team |
+|---|---|---|
+| `npc_boss_tier2` | Walker (lane tower) | 3 |
+| `npc_barrack_boss` | **Watcher** ("base boss") | 6 |
+| `npc_boss_tier3` | **Patron** (Shrine→Patron phased, `m_PatronKilledSound`, `m_nPhase2Health`) | 1 |
+
+`PatronDesigner` is now `npc_boss_tier3`; `IsGuardianDesigner` is now
+`npc_boss_tier2 || npc_barrack_boss` (the sub-objectives, Patron excluded).
+See `raw/notes/2026-06-04-patron-is-tier3-not-barrack-boss.md`.
+
+## False-defeat suppression — sub-objective scripted-weaken gate
+
+> **Caveat (2026-06-04):** the analysis below was authored when `npc_barrack_boss`
+> was believed to be the Patron. The window machinery is retained and retargeted at
+> the real Patron (`npc_boss_tier3`), but whether a sub-objective death actually fires
+> a scripted lethal hit on `npc_boss_tier3` is now **unverified** — needs in-game
+> testing. It may turn out to be unnecessary and removable.
+
+When a `npc_boss_tier2` (Walker) or `npc_barrack_boss` (Watcher) dies, the engine was
+observed to fire a **scripted large-damage event on the same team's Patron** to weaken
+it. The attacker on that scripted event is propagated from **whatever killed the
+sub-objective** — i.e. a trooper that kills the friendly sub-objective propagates itself
+as attacker with `IsTrooperDesigner = true`.
+
+**The bug (originally fixed 2026-04-28, commit `196b442`):** the `OnTakeDamage` path's
+`realKill` check — intended to only allow troopers to end the game by killing the enemy
+Patron directly — also fired for this scripted weaken hit, calling
 `EndMode(victory: false)` with the Patron still at full health.
 
 **Fix:** track `_humanPatronWeakenAt` / `_enemyPatronWeakenAt` timestamps (set in
@@ -251,7 +280,7 @@ directly — also fired for this scripted weaken hit, calling
   and restore `Health = MaxHealth`.
 - The `MaxHealth * 0.5f` magnitude threshold lets small chip damage during the window
   pass through normally, so coincident real attacks aren't frozen.
-- Order of events: `entity_killed` for the guardian fires **before** the scripted
+- Order of events: `entity_killed` for the sub-objective fires **before** the scripted
   `OnTakeDamage` on the Patron, so the timestamp is reliably set when the gate runs.
 - Restoring to `MaxHealth` (not `1`) is critical: pinning to 1 would make every subsequent
   damage event trigger the lethal-absorb branch for ~2s, re-introducing the false defeat
