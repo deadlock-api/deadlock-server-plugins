@@ -8,6 +8,28 @@ type: log
 Append-only. Newest entries on top. Every ingest, query-that-wrote-a-page,
 and lint run gets an entry.
 
+## [2026-06-04] — Patron is a two-phase boss; end only on its 2nd death
+
+- **Operation:** bug fix + ingest
+- **Source:** user report ("dies once, ~20s, back again, only 2nd death is over") +
+  game-files `npc_units.vdata` `npc_boss_tier3` (`m_nMaxHealth`+`m_nPhase2Health`,
+  `m_flPhase1Dying*`, `m_flPostShrineTransition`, invulnerable `m_DyingModifier`).
+- **Raw note added:** `raw/notes/2026-06-04-patron-two-phase-death.md`
+- **Code changed:** `TrooperInvasion/TrooperInvasion.cs` (per-team down counters +
+  debounce const + resets), `TrooperInvasion/TrooperInvasion.EndMode.cs`
+  (`OnTakeDamage` lets the 1st real death through, intercepts only the 2nd),
+  `TrooperInvasion/TrooperInvasion.Players.cs` (reset counters on last-disconnect).
+  Builds clean.
+- **Pages updated:** [[trooper-invasion]] (new "Two-phase Patron death" section,
+  win/lose bullet now says "final" blow), `index.md`, `log.md`.
+- **Key finding:** the prior fix correctly targeted `npc_boss_tier3` but pinned HP +
+  ended on the FIRST lethal blow, so the mode ended at the Shrine phase. Now the first
+  real death passes through (engine transforms Shrine→Patron) and only the second is
+  swallowed/pinned/`EndMode`d. 5s debounce prevents the multi-tick killing blow from
+  counting twice (phase 2 unreachable that fast — invulnerable through transform).
+- **Flagged unverified:** assumes phase-1 death does not trigger the engine's
+  match-end client kick; needs live confirmation.
+
 ## [2026-06-04] — Patron is npc_boss_tier3, not npc_barrack_boss (false-defeat fix)
 
 - **Operation:** bug fix + ingest

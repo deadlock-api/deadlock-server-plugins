@@ -19,6 +19,7 @@ sources:
   - knowledge-base/raw/notes/2026-05-29-trooper-invasion-file-split.md
   - knowledge-base/raw/notes/2026-05-29-trooper-invasion-guardians-self-spawn-solution.md
   - knowledge-base/raw/notes/2026-06-04-patron-is-tier3-not-barrack-boss.md
+  - knowledge-base/raw/notes/2026-06-04-patron-two-phase-death.md
   - ../TrooperInvasion/TrooperInvasion.cs
   - ../TrooperInvasion/TrooperInvasion.Guardians.cs
   - ../TrooperInvasion/WaveTuning.cs
@@ -223,15 +224,15 @@ lifted from `TagPlugin.cs:342-346`.
   without touching the HUD clock or `m_eGameState`. Earlier iterations
   wrote the 5-field anchor + `eGameState` every tick; all that code was
   deleted. Engine's native HUD clock runs correctly on its own.
-- **Win/lose conditions** — `OnTakeDamage` intercepts the killing blow on the
-  **Patron** (`PatronDesigner = "npc_boss_tier3"`). Team-2 Patron destroyed →
+- **Win/lose conditions** — `OnTakeDamage` intercepts the **final** killing blow on
+  the **Patron** (`PatronDesigner = "npc_boss_tier3"`). Team-2 Patron destroyed →
   defeat; team-3 Patron destroyed → victory; either way `_modeOver = true`,
   scheduler stops. **Corrected 2026-06-04:** this previously pointed at
   `npc_barrack_boss`, which is the **Watcher** (6 "base bosses" per team), not
   the Patron — so the first base boss to fall triggered a false Defeat. The real
   Patron is `npc_boss_tier3` (game-files `npc_units.vdata`: `m_PatronKilledSound`,
-  Shrine→Patron phases). See [[deadlock-game]] NPC classnames and the
-  "False-defeat suppression" guard below.
+  Shrine→Patron phases). See [[deadlock-game]] NPC classnames, the two-phase
+  handling below, and the "False-defeat suppression" guard.
 - **Flex slots** force-unlocked at startup (schema-write pattern, same as
   [[deathmatch]]).
 - **Fast respawn** — `citadel_player_spawn_time_max_respawn_time = 3`.
@@ -254,6 +255,33 @@ the local Steam install mounted via `GAMEFILES_MOUNT`) settle it:
 `PatronDesigner` is now `npc_boss_tier3`; `IsGuardianDesigner` is now
 `npc_boss_tier2 || npc_barrack_boss` (the sub-objectives, Patron excluded).
 See `raw/notes/2026-06-04-patron-is-tier3-not-barrack-boss.md`.
+
+## Two-phase Patron death (2026-06-04)
+
+`npc_boss_tier3` is a **two-phase boss**. The first real death drops the Shrine form;
+the engine makes it invulnerable through a ~15-20s dying/transform sequence
+(`m_DyingModifier` = INVULNERABLE/UNKILLABLE/UNTARGETABLE) and revives it as the mobile
+Patron. Only the **second** death is the true end. vdata evidence: `m_nMaxHealth=12000`
+**and** `m_nPhase2Health=12000`, plus `m_flPhase1Dying{Begin,Drop,Wait,TransformUp}` and
+`m_flPostShrineTransition`.
+
+The earlier code pinned HP to 1 and called `EndMode` on the *first* lethal blow, ending
+the mode at phase-1 depletion. `OnTakeDamage` now counts real-kill lethal blows per team
+(`_humanPatronDowns` / `_enemyPatronDowns`):
+
+1. Non-real (scripted/world) lethal hit → pin to 1, swallow (the weaken/never-die guard).
+2. **1st** real death (`downs < PatronPhases = 2`) → let the lethal damage **through** so
+   the engine kills the Shrine and runs its transform. No pin, no `EndMode`.
+3. **2nd** real death → swallow + pin + `EndMode` (stops the engine PostGame kick).
+
+`PatronTransformDebounceSeconds = 5.0` coalesces a single death's multi-tick killing blow
+into one "down"; phase 2 is unreachable that fast (boss invulnerable through the transform).
+Counters reset in `OnStartupServer` (post-`changelevel`) and the last-player-disconnect path.
+
+> **Unverified — needs in-game testing:** assumes letting phase 1 reach 0 HP does **not**
+> trigger the engine match-end kick (the transform handles it). The user's "comes back after
+> ~20s" report supports this, but the pass-through path is new.
+> See `raw/notes/2026-06-04-patron-two-phase-death.md`.
 
 ## False-defeat suppression — sub-objective scripted-weaken gate
 

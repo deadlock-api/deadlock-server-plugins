@@ -11,10 +11,13 @@ public partial class TrooperInvasionPlugin
     [GameEventHandler("round_end")]
     public HookResult OnRoundEnd(RoundEndEvent args) => HookResult.Stop;
 
-    // Intercepts the killing blow on either Patron. Letting it reach 0 HP flips
-    // m_eGameState → PostGame, which kicks every client and blocks joins until a
-    // map reload. We zero the lethal damage, pin HP to 1, and call EndMode
-    // ourselves. Non-lethal damage passes through so the HUD still ticks down.
+    // Intercepts the FINAL killing blow on either Patron. The Patron is a two-phase
+    // boss: the first real death drops the Shrine form, which the engine revives
+    // ~15-20s later as the mobile Patron — so phase 1 deaths are let through to the
+    // engine untouched. Only the second (final) death flips m_eGameState → PostGame
+    // (kicks every client, blocks joins until a map reload); we swallow that lethal
+    // hit, pin HP to 1, and call EndMode ourselves. Non-lethal damage passes through
+    // so the HUD still ticks down.
     public override HookResult OnTakeDamage(TakeDamageEvent args)
     {
         if (args.Entity.DesignerName != PatronDesigner) return HookResult.Continue;
@@ -48,18 +51,48 @@ public partial class TrooperInvasionPlugin
 
         if (args.Entity.Health - args.Info.Damage > 0f) return HookResult.Continue;
 
-        // Always swallow the lethal damage so the Patron never reaches 0 HP.
-        args.Info.Damage = 0f;
-        args.Entity.Health = 1;
-
-        // Only declare victory/defeat when a real player or trooper landed the
-        // blow — the scripted weaken hit above must not count.
+        // Only a real player/trooper blow can drop a phase — any scripted/world
+        // lethal hit (incl. the weaken hit handled above) must never kill the Patron.
         var attacker = args.Info.Attacker;
         bool realKill = attacker != null &&
             (attacker.As<CCitadelPlayerPawn>() != null || IsTrooperDesigner(attacker.DesignerName));
-        if (!realKill) return HookResult.Continue;
+        if (!realKill)
+        {
+            args.Info.Damage = 0f;
+            args.Entity.Health = 1;
+            return HookResult.Continue;
+        }
 
-        EndMode(victory: args.Entity.TeamNum != HumanTeam);
+        // Debounce the killing blow: a single death can land several lethal damage
+        // events in one tick. Phase 2 is unreachable inside the window because the
+        // boss is invulnerable for the whole ~15-20s transform, so anything within
+        // PatronTransformDebounceSeconds of the last counted down is the same death.
+        int team = args.Entity.TeamNum;
+        var now = DateTime.UtcNow;
+        DateTime? lastDown = team == HumanTeam ? _humanPatronDownAt : _enemyPatronDownAt;
+        if (lastDown.HasValue && (now - lastDown.Value).TotalSeconds < PatronTransformDebounceSeconds)
+        {
+            args.Info.Damage = 0f;
+            args.Entity.Health = 1;
+            return HookResult.Continue;
+        }
+
+        int downs = team == HumanTeam ? ++_humanPatronDowns : ++_enemyPatronDowns;
+        if (team == HumanTeam) _humanPatronDownAt = now; else _enemyPatronDownAt = now;
+
+        if (downs < PatronPhases)
+        {
+            // Phase 1 down: let the lethal blow through so the engine kills the Shrine
+            // form and runs its transform to the next phase. Do NOT pin, do NOT end.
+            Console.WriteLine($"[TI] Patron (team {team}) phase {downs}/{PatronPhases} down — engine reviving it as the next phase.");
+            return HookResult.Continue;
+        }
+
+        // Final phase down: swallow the lethal damage so the engine never flips
+        // m_eGameState → PostGame (which kicks everyone), then end the mode ourselves.
+        args.Info.Damage = 0f;
+        args.Entity.Health = 1;
+        EndMode(victory: team != HumanTeam);
         return HookResult.Continue;
     }
 
@@ -79,9 +112,10 @@ public partial class TrooperInvasionPlugin
             else if (killed.TeamNum == EnemyTeam) _enemyPatronWeakenAt = DateTime.UtcNow;
         }
 
-        // The Patron (npc_boss_tier3) death is intercepted in OnTakeDamage, so it
-        // never reaches here. Watchers (npc_barrack_boss) do die normally now — they
-        // are not IsTrooperDesigner, so they skip the trooper-bounty branch below.
+        // A phase-1 Patron (npc_boss_tier3) death DOES reach here (OnTakeDamage lets
+        // it through to transform); it is neither IsGuardianDesigner nor
+        // IsTrooperDesigner and is not a player pawn, so every branch below skips it.
+        // Watchers (npc_barrack_boss) likewise die normally and skip the bounty branch.
         if (IsTrooperDesigner(killed.DesignerName) && killed.TeamNum == EnemyTeam)
         {
             var trooperKiller = CBaseEntity.FromIndex<CCitadelPlayerPawn>(args.EntindexAttacker);

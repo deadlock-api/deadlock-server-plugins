@@ -40,6 +40,19 @@ public partial class TrooperInvasionPlugin : DeadworksPluginBase
     private DateTime? _humanPatronWeakenAt;
     private DateTime? _enemyPatronWeakenAt;
 
+    // The Patron (npc_boss_tier3) is a two-phase boss: the first real death drops
+    // the Shrine form, which the engine makes invulnerable through a ~15-20s
+    // dying/transform sequence (m_DyingModifier) and revives as the mobile Patron.
+    // Only the SECOND real death is the true end. Count downs per team; debounce so
+    // a single death's multi-tick killing blow isn't miscounted as two (phase 2 is
+    // unreachable inside the debounce — the boss is invulnerable through the transform).
+    private const int PatronPhases = 2;
+    private const double PatronTransformDebounceSeconds = 5.0;
+    private int _humanPatronDowns;
+    private int _enemyPatronDowns;
+    private DateTime? _humanPatronDownAt;
+    private DateTime? _enemyPatronDownAt;
+
     private const int StarterGold = 2500;
     private const int CatchUpGoldPerWave = 500;
     // Once per slot: respawn keeps your earned souls; disconnect clears the slot.
@@ -115,6 +128,10 @@ public partial class TrooperInvasionPlugin : DeadworksPluginBase
         _stats.ClearRoundStats();
         _humanPatronWeakenAt = null;
         _enemyPatronWeakenAt = null;
+        _humanPatronDowns = 0;
+        _enemyPatronDowns = 0;
+        _humanPatronDownAt = null;
+        _enemyPatronDownAt = null;
         _stats.Reset();
 
         EnsureNormalMatchMode();

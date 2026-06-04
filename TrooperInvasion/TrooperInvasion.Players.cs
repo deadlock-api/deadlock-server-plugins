@@ -147,6 +147,10 @@ public partial class TrooperInvasionPlugin
             DisarmWaves("last player disconnected");
             _roundNum = 1;
             _modeOver = false;
+            _humanPatronDowns = 0;
+            _enemyPatronDowns = 0;
+            _humanPatronDownAt = null;
+            _enemyPatronDownAt = null;
             _starterGoldSeeded.Clear();
             _stats.Reset();
         }

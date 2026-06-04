@@ -5,7 +5,16 @@ created: 2026-04-21
 updated: 2026-06-04
 ---
 
-_Last ingest: 2026-06-04 — **Patron is `npc_boss_tier3`, NOT `npc_barrack_boss`.**
+_Last ingest: 2026-06-04 — **Patron is a two-phase boss; end only on its 2nd death.**
+`npc_boss_tier3` drops its Shrine form on the first real death and the engine revives it
+~15-20s later as the mobile Patron (invulnerable through the transform via `m_DyingModifier`;
+vdata has `m_nMaxHealth`+`m_nPhase2Health`). `OnTakeDamage` now counts real-kill deaths per
+team: 1st death passes through untouched (engine transforms it), 2nd death is swallowed +
+pinned + `EndMode`. 5s debounce coalesces the multi-tick killing blow. New source note
+`2026-06-04-patron-two-phase-death.md`; [[trooper-invasion]] "Two-phase Patron death". Flagged
+unverified (assumes phase-1 death doesn't kick clients)._
+
+_Prev ingest: 2026-06-04 — **Patron is `npc_boss_tier3`, NOT `npc_barrack_boss`.**
 TrooperInvasion showed "Defeat" the instant the first base boss fell because
 `PatronDesigner` pointed at `npc_barrack_boss` — which game-files `npc_units.vdata`
 proves is the **Watcher** (6 "base bosses" per team), not the Patron. The real Patron is
