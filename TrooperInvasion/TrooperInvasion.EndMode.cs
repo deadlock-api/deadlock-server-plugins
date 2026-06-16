@@ -6,7 +6,19 @@ namespace TrooperInvasion;
 public partial class TrooperInvasionPlugin
 {
     [GameEventHandler("gameover_msg")]
-    public HookResult OnGameoverMsg(GameoverMsgEvent args) => HookResult.Stop;
+    public HookResult OnGameoverMsg(GameoverMsgEvent args)
+    {
+        if (!_modeOver)
+        {
+            // OnTakeDamage didn't intercept — the engine ran its native end
+            // sequence. Kick off an immediate changelevel so the server doesn't
+            // hang indefinitely with no players and no reset timer.
+            Console.WriteLine("[TI] Safety: native gameover fired before EndMode — triggering immediate changelevel.");
+            _modeOver = true;
+            DoChangeLevel("safety-reset");
+        }
+        return HookResult.Stop;
+    }
 
     [GameEventHandler("round_end")]
     public HookResult OnRoundEnd(RoundEndEvent args) => HookResult.Stop;
@@ -25,10 +37,7 @@ public partial class TrooperInvasionPlugin
         // Patron is invulnerable through the cooldown so stray hits can't
         // re-trigger the defeat handler.
         if (_modeOver)
-        {
-            args.Info.Damage = 0f;
-            return HookResult.Continue;
-        }
+            return HookResult.Stop;
 
         // A Walker / Watcher death fires an engine-scripted "weaken Patron"
         // hit whose magnitude exceeds Patron HP, with the attacker propagated from
@@ -43,10 +52,9 @@ public partial class TrooperInvasionPlugin
             && (DateTime.UtcNow - weakenAt.Value).TotalSeconds < GuardianWeakenWindowSeconds
             && args.Info.Damage > args.Entity.MaxHealth * 0.5f)
         {
-            args.Info.Damage = 0f;
             args.Entity.Health = args.Entity.MaxHealth;
             Console.WriteLine($"[TI] Absorbed scripted weaken-Patron event (team {args.Entity.TeamNum}) — Patron pinned at full HP.");
-            return HookResult.Continue;
+            return HookResult.Stop;
         }
 
         if (args.Entity.Health - args.Info.Damage > 0f) return HookResult.Continue;
@@ -58,9 +66,8 @@ public partial class TrooperInvasionPlugin
             (attacker.As<CCitadelPlayerPawn>() != null || IsTrooperDesigner(attacker.DesignerName));
         if (!realKill)
         {
-            args.Info.Damage = 0f;
             args.Entity.Health = 1;
-            return HookResult.Continue;
+            return HookResult.Stop;
         }
 
         // Debounce the killing blow: a single death can land several lethal damage
@@ -72,9 +79,8 @@ public partial class TrooperInvasionPlugin
         DateTime? lastDown = team == HumanTeam ? _humanPatronDownAt : _enemyPatronDownAt;
         if (lastDown.HasValue && (now - lastDown.Value).TotalSeconds < PatronTransformDebounceSeconds)
         {
-            args.Info.Damage = 0f;
             args.Entity.Health = 1;
-            return HookResult.Continue;
+            return HookResult.Stop;
         }
 
         int downs = team == HumanTeam ? ++_humanPatronDowns : ++_enemyPatronDowns;
@@ -88,12 +94,13 @@ public partial class TrooperInvasionPlugin
             return HookResult.Continue;
         }
 
-        // Final phase down: swallow the lethal damage so the engine never flips
+        // Final phase down: block the lethal hit so the engine never flips
         // m_eGameState → PostGame (which kicks everyone), then end the mode ourselves.
-        args.Info.Damage = 0f;
+        // HookResult.Stop is required — Continue passes damage through to the engine
+        // (even if zeroed), which still causes the entity kill and native game-over.
         args.Entity.Health = 1;
         EndMode(victory: team != HumanTeam);
-        return HookResult.Continue;
+        return HookResult.Stop;
     }
 
     [GameEventHandler("entity_killed")]
