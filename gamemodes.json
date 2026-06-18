@@ -1,6 +1,6 @@
 {
-  "normal": ["StatusPoker", "Hostname", "Feedback", "StuckCommand"],
-  "lock-timer": ["StatusPoker", "LockTimer", "Hostname", "Feedback", "StuckCommand"],
-  "deathmatch": ["StatusPoker", "Deathmatch", "Hostname", "FlexSlotUnlock", "TeamChangeBlock", "HealOnSpawn", "DisconnectCleanup", "HeroSelectOnNextSpawn", "Feedback"],
-  "trooper-invasion": ["StatusPoker", "TrooperInvasion", "Hostname", "FlexSlotUnlock", "TeamChangeBlock", "HeroSelect", "HealOnSpawn", "DisconnectCleanup", "Feedback", "StuckCommand"]
+  "normal": ["utils/StatusPoker", "utils/Hostname", "utils/Feedback", "utils/StuckCommand"],
+  "lock-timer": ["utils/StatusPoker", "gamemodes/LockTimer", "utils/Hostname", "utils/Feedback", "utils/StuckCommand"],
+  "deathmatch": ["utils/StatusPoker", "gamemodes/Deathmatch", "utils/Hostname", "utils/FlexSlotUnlock", "utils/TeamChangeBlock", "utils/HealOnSpawn", "utils/DisconnectCleanup", "utils/HeroSelectOnNextSpawn", "utils/Feedback"],
+  "trooper-invasion": ["utils/StatusPoker", "gamemodes/TrooperInvasion", "utils/Hostname", "utils/FlexSlotUnlock", "utils/TeamChangeBlock", "utils/HeroSelect", "utils/HealOnSpawn", "utils/DisconnectCleanup", "utils/Feedback", "utils/StuckCommand"]
 }

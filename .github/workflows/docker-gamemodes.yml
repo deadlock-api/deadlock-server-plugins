@@ -40,23 +40,23 @@ jobs:
               - '.github/workflows/docker-gamemodes.yml'
               - 'gamemodes.json'
             Deathmatch:
-              - 'Deathmatch/**'
+              - 'gamemodes/Deathmatch/**'
             LockTimer:
-              - 'LockTimer/**'
+              - 'gamemodes/LockTimer/**'
             StatusPoker:
-              - 'StatusPoker/**'
+              - 'utils/StatusPoker/**'
             TrooperInvasion:
-              - 'TrooperInvasion/**'
+              - 'gamemodes/TrooperInvasion/**'
             HeroSelect:
-              - 'HeroSelect/**'
+              - 'utils/HeroSelect/**'
             HealOnSpawn:
-              - 'HealOnSpawn/**'
+              - 'utils/HealOnSpawn/**'
             DisconnectCleanup:
-              - 'DisconnectCleanup/**'
+              - 'utils/DisconnectCleanup/**'
             HeroSelectOnNextSpawn:
-              - 'HeroSelectOnNextSpawn/**'
+              - 'utils/HeroSelectOnNextSpawn/**'
             StuckCommand:
-              - 'StuckCommand/**'
+              - 'utils/StuckCommand/**'
 
       - name: Compute gamemode matrix
         id: compute
@@ -76,7 +76,7 @@ jobs:
             matrix=$(jq -c --argjson changed "$changed" '
               [keys[] as $k
                 | {gamemode: $k, plugins: .[$k]}
-                | select(.plugins | any(. as $p | $changed | index($p)))]
+                | select(.plugins | any(. as $p | ($p | split("/")[-1]) as $pname | $changed | index($pname)))]
             ' gamemodes.json)
           fi
 

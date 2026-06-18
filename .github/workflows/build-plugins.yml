@@ -26,23 +26,23 @@ jobs:
               - 'global.json'
               - 'NuGet.config'
             Deathmatch:
-              - 'Deathmatch/**'
+              - 'gamemodes/Deathmatch/**'
             LockTimer:
-              - 'LockTimer/**'
+              - 'gamemodes/LockTimer/**'
             StatusPoker:
-              - 'StatusPoker/**'
+              - 'utils/StatusPoker/**'
             TrooperInvasion:
-              - 'TrooperInvasion/**'
+              - 'gamemodes/TrooperInvasion/**'
             HeroSelect:
-              - 'HeroSelect/**'
+              - 'utils/HeroSelect/**'
             HealOnSpawn:
-              - 'HealOnSpawn/**'
+              - 'utils/HealOnSpawn/**'
             DisconnectCleanup:
-              - 'DisconnectCleanup/**'
+              - 'utils/DisconnectCleanup/**'
             HeroSelectOnNextSpawn:
-              - 'HeroSelectOnNextSpawn/**'
+              - 'utils/HeroSelectOnNextSpawn/**'
             StuckCommand:
-              - 'StuckCommand/**'
+              - 'utils/StuckCommand/**'
 
       - name: Compute plugin matrix
         id: compute
@@ -59,7 +59,7 @@ jobs:
           else
             tops=$(echo "$CHANGES" | jq -c '[.[] | select(. != "force_all")]')
             plugins=$(echo "$all_plugins" | jq -c --argjson tops "$tops" \
-              '[.[] | select((. | split("/")[0]) as $top | $tops | index($top))]')
+              '[.[] | select((. | split("/")[-1]) as $top | $tops | index($top))]')
           fi
 
           echo "plugins=$plugins" >> "$GITHUB_OUTPUT"
