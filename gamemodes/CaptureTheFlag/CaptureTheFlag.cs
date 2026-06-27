@@ -64,7 +64,7 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
     private static readonly SchemaAccessor<uint> _eGameState = new("CCitadelGameRules"u8, "m_eGameState"u8);
 
     private const string NeutralCampDesigner = "info_neutral_trooper_camp";
-    private const string TeamSpawnDesigner = "info_player_teamspawn";
+    private const string TeamSpawnDesigner = "info_team_spawn";
 
     // team -> that team's real player spawn points (info_player_teamspawn). Used to respawn
     // players in their base at round start instead of dumping them on the Patron.
@@ -176,24 +176,9 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
         if (_midBossSpawn is Vector3 mb) _spawnPoints.Add(mb); // actual mid-boss spawn (not map mid)
 
         _flagPos = PickSpawnPoint();
-        LogIdolEnvironment();
-        // Diagnostic: what spawn-related entities does the map actually have, and per team?
-        var spawnNames = new Dictionary<string, int>();
-        foreach (var ent in Entities.All)
-        {
-            var n = ent.DesignerName;
-            if (n.Contains("spawn") || n.Contains("player") || n.Contains("fountain") || n.Contains("teleport"))
-            {
-                spawnNames[n] = spawnNames.GetValueOrDefault(n) + 1;
-                if (spawnNames[n] <= 3) Console.WriteLine($"[CTF] spawn-ent: {n} team={ent.TeamNum} pos={ent.Position:F0}");
-            }
-        }
-        Console.WriteLine($"[CTF] spawn-ent counts: {string.Join(", ", spawnNames.Select(kv => $"{kv.Key}x{kv.Value}"))}");
-        Console.WriteLine($"[CTF] team spawns: {string.Join(", ", _teamSpawns.Select(kv => $"t{kv.Key}x{kv.Value.Count}"))}");
-
         SpawnIdol(_flagPos);
         _worldInit = true;
-        Console.WriteLine($"[CTF] World init (attempt {_initAttempts}): stripped {stripped} NPCs, neutralized {neutralized} base bosses; {_spawnPoints.Count} spawn points; zones [{string.Join(",", _baseZones.Keys)}]; center {_center:F0}");
+        Console.WriteLine($"[CTF] World init (attempt {_initAttempts}): stripped {stripped} NPCs, neutralized {neutralized} base bosses; {_spawnPoints.Count} idol spawns; team spawns [{string.Join(",", _teamSpawns.Select(kv => $"t{kv.Key}x{kv.Value.Count}"))}]; zones [{string.Join(",", _baseZones.Keys)}]; center {_center:F0}");
     }
 
     public override void OnConfigReloaded()
