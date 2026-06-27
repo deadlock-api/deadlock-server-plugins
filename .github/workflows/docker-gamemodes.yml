@@ -39,6 +39,8 @@ jobs:
             force_all:
               - '.github/workflows/docker-gamemodes.yml'
               - 'gamemodes.json'
+            CaptureTheFlag:
+              - 'gamemodes/CaptureTheFlag/**'
             Deathmatch:
               - 'gamemodes/Deathmatch/**'
             LockTimer:

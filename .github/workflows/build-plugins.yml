@@ -25,6 +25,8 @@ jobs:
               - 'Directory.Build.targets'
               - 'global.json'
               - 'NuGet.config'
+            CaptureTheFlag:
+              - 'gamemodes/CaptureTheFlag/**'
             Deathmatch:
               - 'gamemodes/Deathmatch/**'
             LockTimer:

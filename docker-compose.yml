@@ -138,6 +138,25 @@ services:
       - compatdata-trooper-invasion:/home/steam/.steam/steam/steamapps/compatdata
       - ./scripts/wait-for-empty.sh:/usr/local/bin/wait-for-empty.sh:ro
 
+  capture-the-flag:
+    <<: *base
+    image: ghcr.io/deadlock-api/deadlock-server-plugins/capture-the-flag:latest
+    ports:
+      - "27019:27019/udp"
+      - "27019:27019/tcp"
+    environment:
+      <<: *base-env
+      SERVER_PORT: 27019
+      DEADWORKS_ENV_PORT: 27019
+      DEADWORKS_ENV_HOSTNAME: 24/7 Capture the Flag | One-Flag CTF | Melee the Urn + Escort to Enemy Base | Best of 5
+    volumes:
+      - proton:/opt/proton
+      - gamefiles:/opt/gamefiles
+      - dotnet-cache:/opt/dotnet-cache
+      - gamedata-capture-the-flag:/home/steam/server
+      - compatdata-capture-the-flag:/home/steam/.steam/steam/steamapps/compatdata
+      - ./scripts/wait-for-empty.sh:/usr/local/bin/wait-for-empty.sh:ro
+
 volumes:
   proton:
   gamefiles:
@@ -145,8 +164,10 @@ volumes:
   gamedata-lock-timer:
   gamedata-deathmatch:
   gamedata-trooper-invasion:
+  gamedata-capture-the-flag:
   compatdata-normal:
   compatdata-lock-timer:
   compatdata-deathmatch:
   compatdata-trooper-invasion:
+  compatdata-capture-the-flag:
   dotnet-cache:
