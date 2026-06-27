@@ -124,11 +124,18 @@ public partial class CaptureTheFlagPlugin
             var pawn = ctrl.GetHeroPawn()?.As<CCitadelPlayerPawn>();
             if (pawn == null || !pawn.IsAlive) continue;
 
+            int team = ctrl.TeamNum;
             Vector3 target;
-            if (_teamSpawns.TryGetValue(ctrl.TeamNum, out var spawns) && spawns.Count > 0)
-                target = spawns[Random.Shared.Next(spawns.Count)];
-            else if (_baseZones.TryGetValue(ctrl.TeamNum, out var zone))
-                target = (zone.Min + zone.Max) * 0.5f;
+            if (_teamSpawns.TryGetValue(team, out var spawns) && spawns.Count > 0 && _baseZones.TryGetValue(team, out var zone))
+            {
+                // Of the ~44 scattered team spawns, the normal fountain spawns are the cluster
+                // nearest the base (Patron) — pick among the closest few, not a random one.
+                var c = (zone.Min + zone.Max) * 0.5f;
+                var baseSpawns = spawns.OrderBy(s => Vector3.DistanceSquared(s, c)).Take(6).ToList();
+                target = baseSpawns[Random.Shared.Next(baseSpawns.Count)];
+            }
+            else if (_baseZones.TryGetValue(team, out var z2))
+                target = (z2.Min + z2.Max) * 0.5f;
             else continue;
 
             pawn.Teleport(position: target);
