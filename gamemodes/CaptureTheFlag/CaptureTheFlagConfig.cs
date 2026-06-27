@@ -6,9 +6,24 @@ public class CaptureTheFlagConfig
 {
     public int CapturesToWin { get; set; } = 3;       // round wins needed to take the match (best-of-5)
     public int RoundsPerMatch { get; set; } = 5;       // max rounds before the match ends regardless
-    public float RoundSeconds { get; set; } = 180f;    // round time cap; on timeout nobody scores
+    public float RoundSeconds { get; set; } = 480f;    // round time cap (8 min); on timeout nobody scores
     public float IntermissionSeconds { get; set; } = 5f;
+
+    // Troopers get a little tougher each round (a trooper's health is multiplied by
+    // 1 + (round-1)*TrooperHealthScalePerRound, capped at MaxTrooperHealthScale). Kept MUCH
+    // lower than TrooperInvasion's PvE curve — here troopers are just lane ambiance in a PvP mode.
+    public float TrooperHealthScalePerRound { get; set; } = 0.15f; // r1=1x, r2=1.15x … r5=1.6x
+    public float MaxTrooperHealthScale { get; set; } = 2f;
     public float AfkKickSeconds { get; set; } = 600f;  // kick players who don't move for this long
+
+    // Per-round economy. Souls scale from ItemSlots×ItemTierMinPrice in round 1 to
+    // ItemSlots×ItemTierMaxPrice in the final round — i.e. ~fully tier-1 early, ~fully tier-4 by
+    // the last round of the best-of-N. Ability points scale the same way over the rounds.
+    public int ItemSlots { get; set; } = 12;
+    public int ItemTierMinPrice { get; set; } = 800;   // tier 1
+    public int ItemTierMaxPrice { get; set; } = 6400;  // tier 4
+    public int AbilityPointsFirstRound { get; set; } = 1;
+    public int AbilityPointsLastRound { get; set; } = 20;
     public float CaptureHoldSeconds { get; set; } = 10f;
     public float RespawnDelaySeconds { get; set; } = 5f;
     public float FlagResetSeconds { get; set; } = 30f;

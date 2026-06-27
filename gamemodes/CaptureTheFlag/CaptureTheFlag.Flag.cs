@@ -31,6 +31,7 @@ public partial class CaptureTheFlagPlugin
     private float _roundDeadline;
     private float _intermissionDeadline;
     private int _roundsPlayed;
+    private int _currentRound = 1; // 1-based number of the round in progress; drives economy + trooper scaling
     private int _humanCount;
 
     private bool IsCarried => _flag is FlagState.Carried or FlagState.Capturing;
@@ -55,7 +56,7 @@ public partial class CaptureTheFlagPlugin
         {
             _warmupDeadline = GlobalVars.CurTime + Config.WarmupSeconds;
             _lastWarmupSecond = -1;
-            Chat.PrintToChatAll($"[CTF] Warmup — round starts in {Config.WarmupSeconds:F0}s. First to {Config.CapturesToWin} captures wins.");
+            Chat.PrintToChatAll($"[CTF] Warmup — round in {Config.WarmupSeconds:F0}s. First to {Config.CapturesToWin} wins.");
             AnnounceStage();
         }
     }
@@ -96,13 +97,39 @@ public partial class CaptureTheFlagPlugin
     private void StartRound()
     {
         _phase = MatchPhase.RoundActive;
+        _currentRound = Math.Clamp(_roundsPlayed + 1, 1, Math.Max(1, Config.RoundsPerMatch));
         _roundDeadline = GlobalVars.CurTime + Config.RoundSeconds;
         _clockStart = GlobalVars.CurTime; // HUD clock counts this round
         RespawnAllInBase();
+        ResetRoundNpcs();
+        GrantRoundEconomy();
         ResetFlagToCenter(announce: false);
         AnnounceStage();
-        Chat.PrintToChatAll($"[CTF] Round {_roundsPlayed + 1}/{Config.RoundsPerMatch} — melee the urn to grab it! {Config.RoundSeconds:F0}s on the clock.");
+        Chat.PrintToChatAll($"[CTF] Round {_currentRound}/{Config.RoundsPerMatch} — melee the urn!");
     }
+
+    // Every player starts each round with the same souls + ability points, scaling from low in
+    // round 1 to ~12 tier-4 items' worth in the final round.
+    private void GrantRoundEconomy()
+    {
+        int round = _currentRound;
+        float frac = Config.RoundsPerMatch <= 1 ? 1f : (round - 1f) / (Config.RoundsPerMatch - 1);
+        int perSlot = (int)MathF.Round(Lerp(Config.ItemTierMinPrice, Config.ItemTierMaxPrice, frac));
+        int souls = Config.ItemSlots * perSlot;
+        int ap = (int)MathF.Round(Lerp(Config.AbilityPointsFirstRound, Config.AbilityPointsLastRound, frac));
+
+        foreach (var ctrl in Players.GetAll())
+        {
+            var pawn = ctrl.GetHeroPawn()?.As<CCitadelPlayerPawn>();
+            if (pawn == null) continue;
+            pawn.SetCurrency(ECurrencyType.EGold, souls);
+            pawn.SetCurrency(ECurrencyType.EAbilityPoints, ap);
+        }
+        Announce($"Round {round}", $"{souls:N0} souls · {ap} AP · tier {1 + (int)MathF.Round(frac * 3)}");
+        Console.WriteLine($"[CTF] Round {round} economy: {souls} souls, {ap} AP ({Config.ItemSlots}x{perSlot})");
+    }
+
+    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
     // HUD countdown to a deadline (e.g. "Round starts in 3…"), once per second, from 5 down to 1.
     private void AnnounceCountdownTo(float deadline, float now)
@@ -111,7 +138,7 @@ public partial class CaptureTheFlagPlugin
         if (secs != _lastWarmupSecond && secs >= 1 && secs <= 5)
         {
             _lastWarmupSecond = secs;
-            Announce($"Round starts in {secs}…", "Melee the urn at its camp to grab it, then escort it into the enemy base.");
+            Announce($"Round in {secs}…", "Melee the urn (minimap) → enemy base.");
         }
     }
 
@@ -196,7 +223,7 @@ public partial class CaptureTheFlagPlugin
             _flag = FlagState.Carried;
             _captureDeadline = 0f;
             _lastCountdownSecond = -1;
-            Chat.PrintToChatAll("[CTF] Capture stopped — the carrier left the zone.");
+            Chat.PrintToChatAll("[CTF] Capture stopped — left the zone.");
             AnnounceStage();
         }
     }
@@ -229,7 +256,7 @@ public partial class CaptureTheFlagPlugin
         ApplyCarrierSpeed(pawn);
 
         string who = pawn.Controller?.PlayerName ?? "Someone";
-        Chat.PrintToChatAll($"[CTF] {who} ({TeamName(_carrierTeam)}) grabbed the idol!");
+        Chat.PrintToChatAll($"[CTF] {who} ({TeamName(_carrierTeam)}) grabbed the urn!");
         AnnounceStage();
     }
 
@@ -239,7 +266,7 @@ public partial class CaptureTheFlagPlugin
         _captureDeadline = now + Config.CaptureHoldSeconds;
         _outOfZoneTicks = 0;
         _lastCountdownSecond = -1;
-        Chat.PrintToChatAll($"[CTF] {TeamName(_carrierTeam)} is capturing! Hold for {Config.CaptureHoldSeconds:F0}s…");
+        Chat.PrintToChatAll($"[CTF] {TeamName(_carrierTeam)} capturing! Hold {Config.CaptureHoldSeconds:F0}s…");
         AnnounceStage();
     }
 
@@ -269,12 +296,12 @@ public partial class CaptureTheFlagPlugin
         if (winner is int w)
         {
             if (w == Amber) _amberCaptures++; else if (w == Sapphire) _sapphireCaptures++;
-            result = $"{TeamName(w)} captured the urn!";
+            result = $"{TeamName(w)} scored!";
         }
-        else result = "Round over — nobody captured the urn.";
+        else result = "Round over — no capture.";
 
-        Chat.PrintToChatAll($"[CTF] {result}  Amber {_amberCaptures} – {_sapphireCaptures} Sapphire  (round {_roundsPlayed}/{Config.RoundsPerMatch})");
-        Announce(result, $"Amber {_amberCaptures} – {_sapphireCaptures} Sapphire    ·    round {_roundsPlayed}/{Config.RoundsPerMatch}");
+        Chat.PrintToChatAll($"[CTF] {result}  {_amberCaptures}–{_sapphireCaptures}  (R{_roundsPlayed}/{Config.RoundsPerMatch})");
+        Announce(result, $"Amber {_amberCaptures} – {_sapphireCaptures} Sapphire · R{_roundsPlayed}/{Config.RoundsPerMatch}");
 
         bool matchOver = _amberCaptures >= Config.CapturesToWin
             || _sapphireCaptures >= Config.CapturesToWin
@@ -292,9 +319,9 @@ public partial class CaptureTheFlagPlugin
         _matchEndDeadline = now + Config.MatchEndDelaySeconds;
         string title = _amberCaptures == _sapphireCaptures
             ? "Match Draw!"
-            : $"{TeamName(_amberCaptures > _sapphireCaptures ? Amber : Sapphire)} Team Wins the match!";
+            : $"{TeamName(_amberCaptures > _sapphireCaptures ? Amber : Sapphire)} wins the match!";
         Announce(title, $"Final: Amber {_amberCaptures} – {_sapphireCaptures} Sapphire");
-        Chat.PrintToChatAll($"[CTF] {title} Final: Amber {_amberCaptures} – {_sapphireCaptures} Sapphire. Teams rebalance, next match in {Config.MatchEndDelaySeconds:F0}s.");
+        Chat.PrintToChatAll($"[CTF] {title}  {_amberCaptures}–{_sapphireCaptures}. Next match in {Config.MatchEndDelaySeconds:F0}s.");
     }
 
     // Even-split shuffle between matches (after a best-of-N). Simple count balance, not rank-based.
@@ -312,7 +339,7 @@ public partial class CaptureTheFlagPlugin
             int team = i % 2 == 0 ? Amber : Sapphire;
             if (players[i].TeamNum != team) players[i].ChangeTeam(team);
         }
-        Chat.PrintToChatAll("[CTF] Teams rebalanced for the next match.");
+        Chat.PrintToChatAll("[CTF] Teams rebalanced.");
     }
 
     // Carrier loses the flag without scoring (death, or carrier pawn lost). Drops at pos.
@@ -325,7 +352,7 @@ public partial class CaptureTheFlagPlugin
         _flag = FlagState.Dropped;
         _flagPos = pos;
         _dropDeadline = GlobalVars.CurTime + Config.FlagResetSeconds;
-        Chat.PrintToChatAll($"[CTF] {TeamName(team)} dropped the idol! Returns in {Config.FlagResetSeconds:F0}s if unclaimed.");
+        Chat.PrintToChatAll($"[CTF] {TeamName(team)} dropped the urn! Resets in {Config.FlagResetSeconds:F0}s.");
         AnnounceStage();
     }
 
@@ -336,7 +363,7 @@ public partial class CaptureTheFlagPlugin
         _flag = FlagState.Neutral;
         _flagPos = PickSpawnPoint();
         _dropDeadline = 0f;
-        if (announce) { Chat.PrintToChatAll("[CTF] The urn reset to a neutral camp — check your minimap."); AnnounceStage(); }
+        if (announce) { Chat.PrintToChatAll("[CTF] Urn reset — check minimap."); AnnounceStage(); }
     }
 
     private void ClearCarrier(CCitadelPlayerPawn? pawn)
@@ -398,7 +425,7 @@ public partial class CaptureTheFlagPlugin
         if (_phase == MatchPhase.Warmup)
         {
             title = "Capture the Urn";
-            desc = $"Find the urn on your MINIMAP, MELEE it to pick it up, then carry it into the ENEMY base. First to {Config.CapturesToWin} round wins takes the match.";
+            desc = $"Melee the urn (minimap) → enemy base. First to {Config.CapturesToWin} wins.";
         }
         else
         {
@@ -408,19 +435,19 @@ public partial class CaptureTheFlagPlugin
             {
                 case FlagState.Neutral:
                     title = "Grab the Urn";
-                    desc = "The urn is loose at a neutral camp — follow the MINIMAP marker and MELEE it to grab it, then run it into the ENEMY base.";
+                    desc = "Melee the urn (minimap), then run it to the enemy base.";
                     break;
                 case FlagState.Dropped:
-                    title = "Urn Dropped!";
-                    desc = $"The urn is on the ground (see MINIMAP) — grab it before it resets in {Config.FlagResetSeconds:F0}s, then take it to the ENEMY base.";
+                    title = "Urn Dropped";
+                    desc = $"Grab it (minimap) before it resets in {Config.FlagResetSeconds:F0}s.";
                     break;
                 case FlagState.Carried:
                     title = $"{carrier} has the Urn";
-                    desc = $"{carrier}: ESCORT your carrier to the {enemy} base (their fountain)!   {enemy}: hunt the carrier down to make them drop it.";
+                    desc = $"{carrier}: escort to {enemy} base.  {enemy}: kill the carrier!";
                     break;
                 case FlagState.Capturing:
-                    title = $"{carrier} is Capturing!";
-                    desc = $"{carrier}: HOLD the {enemy} base for {Config.CaptureHoldSeconds:F0}s to score!   {enemy}: get in there and stop them NOW!";
+                    title = $"{carrier} Capturing!";
+                    desc = $"Hold {enemy} base {Config.CaptureHoldSeconds:F0}s.  {enemy}: stop them!";
                     break;
                 default:
                     return;

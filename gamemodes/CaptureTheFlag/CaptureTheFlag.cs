@@ -20,24 +20,29 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
     private const int Amber = 2;
     private const int Sapphire = 3;
 
-    // Troopers and the neutral mid boss are REMOVED outright (proven safe to delete).
-    private static readonly HashSet<string> NpcsToStrip = new()
+    // Only the neutral mid boss is removed — the urn replaces it as the mid objective (and it's
+    // safe to delete). Troopers, Guardians and Walkers spawn and fight as normal.
+    private static readonly HashSet<string> NpcsToStrip = new() { "npc_mid_boss" };
+
+    // Lane combatants: spawn + fight normally, are killable, and get reset every round. Only
+    // these (plus players) are allowed to deal damage to players (see OnTakeDamage).
+    private static readonly HashSet<string> LaneCombatants = new()
     {
         "npc_trooper",
         "npc_trooper_boss",
-        "npc_mid_boss",     // neutral mid boss / idol objective
+        "npc_boss_tier1",   // Guardian
+        "npc_boss_tier2",   // Walker
     };
+    private static readonly HashSet<string> Troopers = new() { "npc_trooper", "npc_trooper_boss" };
+    private static readonly HashSet<string> GuardiansAndWalkers = new() { "npc_boss_tier1", "npc_boss_tier2" };
 
-    // Base landmarks (Patron, Walkers, Guardians, Watchers) must NOT be Remove()'d — deleting
-    // them mid-session crashes the engine's native objective system. Instead they are kept but
-    // NEUTRALISED: shrunk to invisibility, collision zeroed (players pass through), and made
-    // damage-immune (OnTakeDamage). Their positions are read at world init to anchor the base
-    // zones, so the arena plays clean without the deletions.
-    private static readonly HashSet<string> BaseBosses = new()
+    // Endgame "base bosses" (Patron, Watcher): they can't be Remove()'d (deleting them crashes the
+    // objective system), so they're HIDDEN (shrunk to invisible + collision zeroed), kept immortal
+    // so the match can't end on a base kill, and can't damage players. Guardians/Walkers are left
+    // visible and normal — only these are hidden.
+    private static readonly HashSet<string> ProtectedObjectives = new()
     {
         "npc_boss_tier3",   // Patron
-        "npc_boss_tier2",   // Walker
-        "npc_boss_tier1",   // Guardian
         "npc_barrack_boss", // Watcher
     };
     private const string PatronDesigner = "npc_boss_tier3";
@@ -157,7 +162,7 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
 
         BuildZones(patrons, walkers);
 
-        int stripped = 0, neutralized = 0;
+        int stripped = 0, hidden = 0;
         _spawnPoints.Clear();
         _teamSpawns.Clear();
         foreach (var ent in Entities.All)
@@ -171,14 +176,14 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
                 l.Add(ent.Position);
             }
             if (NpcsToStrip.Contains(name)) { ent.Remove(); stripped++; }
-            else if (BaseBosses.Contains(name)) { NeutralizeBoss(ent); neutralized++; }
+            else if (ProtectedObjectives.Contains(name)) { NeutralizeBoss(ent); hidden++; }
         }
         if (_midBossSpawn is Vector3 mb) _spawnPoints.Add(mb); // actual mid-boss spawn (not map mid)
 
         _flagPos = PickSpawnPoint();
         SpawnIdol(_flagPos);
         _worldInit = true;
-        Console.WriteLine($"[CTF] World init (attempt {_initAttempts}): stripped {stripped} NPCs, neutralized {neutralized} base bosses; {_spawnPoints.Count} idol spawns; team spawns [{string.Join(",", _teamSpawns.Select(kv => $"t{kv.Key}x{kv.Value.Count}"))}]; zones [{string.Join(",", _baseZones.Keys)}]; center {_center:F0}");
+        Console.WriteLine($"[CTF] World init (attempt {_initAttempts}): stripped {stripped} mid boss(es), hid {hidden} base bosses; {_spawnPoints.Count} idol spawns; team spawns [{string.Join(",", _teamSpawns.Select(kv => $"t{kv.Key}x{kv.Value.Count}"))}]; zones [{string.Join(",", _baseZones.Keys)}]; center {_center:F0}");
     }
 
     public override void OnConfigReloaded()
@@ -191,8 +196,8 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
 
     private void ApplyConVars()
     {
-        // Disable creep spawning (keeps the arena clean) and full-build purchasing anywhere.
-        ConVar.Find("citadel_npc_spawn_enabled")?.SetInt(0);
+        // Enable creep spawning (troopers fight in lanes as normal) + full-build purchasing anywhere.
+        ConVar.Find("citadel_npc_spawn_enabled")?.SetInt(1);
         ConVar.Find("citadel_allow_purchasing_anywhere")?.SetInt(1);
         ConVar.Find("citadel_player_spawn_time_max_respawn_time")?.SetInt((int)MathF.Round(Config.RespawnDelaySeconds));
     }
@@ -275,18 +280,47 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
             _spawnPoints.Add(e.Entity.Position);
             Console.WriteLine($"[CTF] captured mid-boss spawn {e.Entity.Position:F0}");
         }
-        // Troopers/mid boss: delete on sight. Base bosses: neutralise (never delete — it crashes
-        // the objective system), but only after world init so TryInitWorld can read their true
-        // positions for the base zones first.
+        // Mid boss deleted on sight; Patron/Watcher hidden; troopers scaled. Guardians/Walkers normal.
         if (NpcsToStrip.Contains(name))
             e.Entity.Remove();
-        else if (_worldInit && BaseBosses.Contains(name))
+        else if (_worldInit && ProtectedObjectives.Contains(name))
             NeutralizeBoss(e.Entity);
+        else if (Troopers.Contains(name))
+            ScaleTrooperForRound(e.Entity);
     }
 
-    // Keep the base landmarks immortal so they can't be destroyed or trip the engine's native
-    // objective/win path. Also: the urn is invulnerable, and a MELEE hit on it is the pickup
-    // trigger (matches the native "Melee to pick up the urn" prompt).
+    // Light per-round health bump for lane troopers (set both MaxHealth + Health — health doesn't
+    // auto-clamp to the new max). Far gentler than TrooperInvasion's PvE scaling.
+    private void ScaleTrooperForRound(CBaseEntity ent)
+    {
+        int baseMax = ent.MaxHealth;
+        if (baseMax <= 0) return;
+        float scale = Math.Min(Config.MaxTrooperHealthScale,
+                               1f + (_currentRound - 1) * Config.TrooperHealthScalePerRound);
+        int scaled = (int)(baseMax * scale);
+        ent.MaxHealth = scaled;
+        ent.Health = scaled;
+    }
+
+    // Reset the lane NPCs at the start of each round: clear all troopers (the spawn system makes
+    // fresh waves) and heal any surviving Guardians/Walkers back to full.
+    private void ResetRoundNpcs()
+    {
+        int cleared = 0, healed = 0;
+        foreach (var ent in Entities.All)
+        {
+            var name = ent.DesignerName;
+            if (Troopers.Contains(name)) { ent.Remove(); cleared++; }
+            else if (GuardiansAndWalkers.Contains(name))
+            {
+                int max = ent.MaxHealth;
+                if (max > 0 && ent.Health < max) { ent.Health = max; healed++; }
+            }
+        }
+        if (cleared > 0 || healed > 0)
+            Console.WriteLine($"[CTF] Round reset: cleared {cleared} troopers, healed {healed} guardians/walkers.");
+    }
+
     public override HookResult OnTakeDamage(TakeDamageEvent args)
     {
         var e = args.Entity;
@@ -306,15 +340,28 @@ public partial class CaptureTheFlagPlugin : DeadworksPluginBase
             return HookResult.Continue;
         }
 
-        // Only player-vs-player damage is allowed. Everything else — base bosses (which we can't
-        // delete without crashing the objective system) shooting players, players hitting bosses,
-        // world/fall damage — is nullified.
-        bool pvp = attacker != null && attacker.Is<CCitadelPlayerPawn>() && e.Is<CCitadelPlayerPawn>();
-        if (!pvp)
+        // Endgame objectives (Patron, Watcher) are immortal so the match can't end on a base kill.
+        if (ProtectedObjectives.Contains(e.DesignerName))
         {
             args.Info.Damage = 0f;
             args.Info.TotalledDamage = 0f;
+            return HookResult.Continue;
         }
+
+        // Damage to a PLAYER is allowed only from another player or a lane combatant
+        // (trooper / guardian / walker). Anything else hurting a player — Patron, Watcher,
+        // sentries, world/fall damage — is nullified.
+        if (e.Is<CCitadelPlayerPawn>())
+        {
+            bool fromPlayer = attacker != null && attacker.Is<CCitadelPlayerPawn>();
+            bool fromCombatant = attacker != null && LaneCombatants.Contains(attacker.DesignerName);
+            if (!fromPlayer && !fromCombatant)
+            {
+                args.Info.Damage = 0f;
+                args.Info.TotalledDamage = 0f;
+            }
+        }
+        // Damage to troopers/guardians/walkers (and between NPCs) is left untouched — normal combat.
         return HookResult.Continue;
     }
 

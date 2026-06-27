@@ -27,7 +27,7 @@ public partial class CaptureTheFlagPlugin
             }
             if (now - rec.Since >= Config.AfkKickSeconds)
             {
-                Chat.PrintToChatAll($"[CTF] Kicking {ctrl.PlayerName} — AFK for {Config.AfkKickSeconds / 60f:F0} min.");
+                Chat.PrintToChatAll($"[CTF] Kicked {ctrl.PlayerName} (AFK).");
                 Server.ClientCommand(slot, "disconnect");
                 _afk.Remove(slot);
             }
@@ -81,7 +81,7 @@ public partial class CaptureTheFlagPlugin
         if (IsCarried && controller.Slot == _carrierSlot)
         {
             ResetFlagToCenter(announce: false);
-            Chat.PrintToChatAll("[CTF] The flag carrier left — the flag returned to center.");
+            Chat.PrintToChatAll("[CTF] Carrier left — urn reset.");
         }
 
         // Server emptied: rewind to a fresh warmup so the next arrivals start clean.
